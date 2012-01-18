@@ -116,9 +116,12 @@ public class OneMeasurementHistogram extends OneMeasurement
   {
     exporter.write(getName(), "Operations", operations);
     exporter.write(getName(), "AverageLatency(us)", (((double)totallatency)/((double)operations)));
+    exporter.write(getName(), "AverageLatency(ms)", ((((double)totallatency)/((double)operations))/1000d));
     exporter.write(getName(), "MinLatency(us)", min);
+    exporter.write(getName(), "MinLatency(ms)", min/1000d);
     exporter.write(getName(), "MaxLatency(us)", max);
-    
+    exporter.write(getName(), "MaxLatency(ms)", max/1000d);
+
     int opcounter=0;
     boolean done95th=false;
     for (int i=0; i<_buckets; i++)
@@ -144,7 +147,9 @@ public class OneMeasurementHistogram extends OneMeasurement
 
     for (int i=0; i<_buckets; i++)
     {
-      exporter.write(getName(), Integer.toString(i), histogram[i]);
+      if(histogram[i]!=0) {
+        exporter.write(getName(), Integer.toString(i), histogram[i]);
+      }
     }
     exporter.write(getName(), ">"+_buckets, histogramoverflow);
   }
