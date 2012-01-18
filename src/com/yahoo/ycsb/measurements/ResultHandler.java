@@ -87,6 +87,18 @@ public class ResultHandler {
 		data_results.get(operation).add(data);
 	}
 
+    public void recordTimeline(String operation, long init, long end) {
+
+        List<Object> data = new ArrayList<Object>(2);
+        data.add(init);
+        data.add(end);
+
+		if (!data_results.containsKey(operation)) {
+			data_results.put(operation, new ArrayList<List<Object>>());
+		}
+		data_results.get(operation).add(data);
+	}
+
 	public void countEvent(String eventType, String event, long number) {
 
 		if (!events.containsKey(eventType)) {
@@ -135,6 +147,9 @@ public class ResultHandler {
 		}
 
 	}
+
+
+
 
 	public HashMap<String, Object> getResulSet() {
 		return resulSet;
