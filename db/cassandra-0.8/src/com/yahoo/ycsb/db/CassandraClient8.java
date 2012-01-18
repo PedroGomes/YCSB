@@ -62,6 +62,12 @@ public class CassandraClient8 extends DB
   public static final String USERNAME_PROPERTY = "cassandra.username";
   public static final String PASSWORD_PROPERTY = "cassandra.password";
 
+  public static final String READ_CONSISTENCY_PROPERTY = "cassandra.readconsistency";
+  public static final String SCAN_CONSISTENCY_PROPERTY = "cassandra.scanconsistency";
+  public static final String WRITE_CONSISTENCY_PROPERTY = "cassandra.writeconsistency";
+  
+  public static final String ROW_BUFFER_PROPERTY = "cassandra.rowbuffer";
+
   public static final String COLUMN_FAMILY_PROPERTY = "cassandra.columnfamily";
   public static final String COLUMN_FAMILY_PROPERTY_DEFAULT = "data";
 
@@ -78,8 +84,15 @@ public class CassandraClient8 extends DB
   Map<ByteBuffer, Map<String, List<Mutation>>> record = new HashMap<ByteBuffer, Map<String, List<Mutation>>>();
   
   ColumnParent parent;
+    
+  int row_buffer = 1000;
+  ConsistencyLevel read_ConsistencyLevel  =  ConsistencyLevel.QUORUM;
+  ConsistencyLevel write_ConsistencyLevel = ConsistencyLevel.QUORUM;
+  ConsistencyLevel scan_ConsistencyLevel  = ConsistencyLevel.QUORUM;
 
-  /**
+
+
+    /**
    * Initialize any state for this DB. Called once per DB instance; there is one
    * DB instance per client thread.
    */
@@ -101,6 +114,17 @@ public class CassandraClient8 extends DB
 
     String username = getProperties().getProperty(USERNAME_PROPERTY);
     String password = getProperties().getProperty(PASSWORD_PROPERTY);
+
+    row_buffer = Integer.parseInt(getProperties().getProperty(ROW_BUFFER_PROPERTY));
+
+    try{
+
+    read_ConsistencyLevel  =  getConsistencyLevel(getProperties().getProperty(READ_CONSISTENCY_PROPERTY));
+    write_ConsistencyLevel =  getConsistencyLevel(getProperties().getProperty(WRITE_CONSISTENCY_PROPERTY));
+    scan_ConsistencyLevel  =  getConsistencyLevel(getProperties().getProperty(SCAN_CONSISTENCY_PROPERTY));
+    }catch (Exception e){
+        throw new DBException(e);
+    }
 
     _debug = Boolean.parseBoolean(getProperties().getProperty("debug", "false"));
 
@@ -155,6 +179,27 @@ public class CassandraClient8 extends DB
         }
     }
   }
+
+  public ConsistencyLevel getConsistencyLevel(String consistency_string) throws Exception{
+      ConsistencyLevel consistencyLevel =  null;
+      if(consistency_string.equalsIgnoreCase("ONE")){
+         consistencyLevel = ConsistencyLevel.ONE; 
+      }
+      else if(consistency_string.equalsIgnoreCase("QUORUM")) {
+          consistencyLevel = ConsistencyLevel.QUORUM;
+      }
+      else if(consistency_string.equalsIgnoreCase("ALL")) {
+          consistencyLevel = ConsistencyLevel.ALL;
+      }
+      else if(consistency_string.equalsIgnoreCase("ANY")) {
+          consistencyLevel = ConsistencyLevel.ANY;
+      }
+      else{
+          throw new Exception("Consistency level no recognised");
+      }
+      return consistencyLevel;
+  }  
+    
 
   /**
    * Cleanup any state for this DB. Called once per DB instance; there is one DB
@@ -215,7 +260,7 @@ public class CassandraClient8 extends DB
           predicate = new SlicePredicate().setColumn_names(fieldlist);
         }
 
-        List<ColumnOrSuperColumn> results = client.get_slice(ByteBuffer.wrap(key.getBytes("UTF-8")), parent, predicate, ConsistencyLevel.ONE);
+        List<ColumnOrSuperColumn> results = client.get_slice(ByteBuffer.wrap(key.getBytes("UTF-8")), parent, predicate,read_ConsistencyLevel);
 
         if (_debug)
         {
@@ -317,10 +362,31 @@ public class CassandraClient8 extends DB
           
           predicate = new SlicePredicate().setColumn_names(fieldlist);
         }
-        
-        KeyRange kr = new KeyRange().setStart_key(startkey.getBytes("UTF-8")).setEnd_key(new byte[] {}).setCount(recordcount);
 
-        List<KeySlice> results = client.get_range_slices(parent, predicate, kr, ConsistencyLevel.ONE);
+        int limit = (recordcount<row_buffer) ? recordcount : row_buffer;
+
+        KeyRange kr = new KeyRange().setStart_key(startkey.getBytes("UTF-8")).setEnd_key(new byte[] {}).setCount(limit);
+
+        List<KeySlice> results = new ArrayList<KeySlice>();
+
+          boolean finished =  false;
+          while (!finished){
+
+              //For memory purposes we choose this way
+              results = new ArrayList<KeySlice>();
+
+              List<KeySlice> temp_results = client.get_range_slices(parent, predicate, kr, scan_ConsistencyLevel);
+
+            if(temp_results.size()<limit){
+                finished = true;
+            }else{
+                kr.setStart_key(temp_results.get(temp_results.size()-1).getKey());
+            }
+            
+            for(KeySlice keySlice: temp_results){
+               results.add(keySlice);
+            }
+        }
 
         if (_debug)
         {
@@ -337,7 +403,7 @@ public class CassandraClient8 extends DB
           ByteIterator value;
           for (ColumnOrSuperColumn onecol : oneresult.columns)
           {
-	          column = onecol.column;
+	        column = onecol.column;
       	    name = new String(column.name.array(), column.name.position()+column.name.arrayOffset(), column.name.remaining());
       	    value = new ByteArrayByteIterator(column.value.array(), column.value.position()+column.value.arrayOffset(), column.value.remaining());
             
