@@ -488,6 +488,10 @@ public class File_CoreWorkload extends Workload {
 
         if (redis_database_info != null) {
             redis_connection_info = redis_database_info;
+            String[] connection_info = redis_connection_info.split(":");
+            String host = connection_info[0];
+            String port = connection_info[1];
+            System.out.println("Redis database in "+host+" : "+Integer.parseInt(port));
         }
 
         store_transaction_timelines = Boolean.parseBoolean(p.getProperty(STORE_TRANSACTION_TIMELINES_PROPERTY, STORE_TRANSACTION_TIMELINES_DEFAULT_PROPERTY));
@@ -533,7 +537,6 @@ public class File_CoreWorkload extends Workload {
             String[] connection_info = redis_connection_info.split(":");
             String host = connection_info[0];
             String port = connection_info[1];
-            System.out.println("Connecting to Redis in "+host+" : "+Integer.parseInt(port));
             redis_client = new Jedis(host,Integer.parseInt(port));
         }
         
@@ -553,6 +556,10 @@ public class File_CoreWorkload extends Workload {
         
         if(KEY_INPUT_SOURCE==REDIS_INPUT){
             key = redis_client.get(Long.toString(keynum));
+            if(key ==null){
+                System.out.println("Null on key: "+Long.toString(keynum));
+            }
+            
         }else{
             key = files_keys.get((int) keynum);
         }
