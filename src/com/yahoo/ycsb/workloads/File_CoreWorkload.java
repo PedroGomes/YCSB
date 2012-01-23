@@ -562,7 +562,7 @@ public class File_CoreWorkload extends Workload {
                 String port = connection_info[1];
                 redis_client = new Jedis(host,Integer.parseInt(port));
             }
-            key = redis_client.get(Long.toString(keynum));
+            key = redis_client.get(keynum+"");
             if(key ==null){
                 System.out.println("Null on key: "+Long.toString(keynum));
             }
