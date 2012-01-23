@@ -555,6 +555,8 @@ public class File_CoreWorkload extends Workload {
         String key = "";
         
         if(KEY_INPUT_SOURCE==REDIS_INPUT){
+            System.out.println("Null on key: "+Long.toString(keynum));
+
             key = redis_client.get(Long.toString(keynum));
             if(key ==null){
                 System.out.println("Null on key: "+Long.toString(keynum));
@@ -563,8 +565,6 @@ public class File_CoreWorkload extends Workload {
         }else{
             key = files_keys.get((int) keynum);
         }
-        
-        
 //        if (!orderedinserts) {
 //            keynum = Utils.hash(keynum);
 //        }
