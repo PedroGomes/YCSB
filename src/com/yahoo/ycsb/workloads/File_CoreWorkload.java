@@ -663,6 +663,7 @@ public class File_CoreWorkload extends Workload {
                 scan_lock.unlock();
             }
             else{
+                op = "READ";
                 doTransactionRead(db,threadstate);
             }
         } else {
