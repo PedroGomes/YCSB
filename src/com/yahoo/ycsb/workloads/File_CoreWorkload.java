@@ -300,10 +300,6 @@ public class File_CoreWorkload extends Workload {
 
     public static String redis_connection_info;
 
-    private Jedis redis_client;
-
-    ResultHandler resultHandler = null;
-
     boolean use_file_columns;
 
     boolean store_transaction_timelines;
@@ -529,10 +525,14 @@ public class File_CoreWorkload extends Workload {
 
     @Override
     public Object initThread(Properties p, int mythreadid, int threadcount) throws WorkloadException {
+
+        ResultHandler resultHandler = null;
         if (store_transaction_timelines) {
             resultHandler = ResultStorage.getQueryResultHandlerInstance(Integer.toString(mythreadid));
         }
-        
+
+        Jedis redis_client = null;
+
         if(KEY_INPUT_SOURCE = REDIS_INPUT){
             String[] connection_info = redis_connection_info.split(":");
             String host = connection_info[0];
@@ -540,8 +540,10 @@ public class File_CoreWorkload extends Workload {
             redis_client = new Jedis("192.168.111.220", 6379);
                     //new Jedis(host,Integer.parseInt(port));
         }
-        
-        return null;
+
+             
+        Pair<ResultHandler,Jedis> thread_state = new Pair<ResultHandler, Jedis>(resultHandler,redis_client);
+        return thread_state;
     }
 
     @Override
@@ -552,28 +554,40 @@ public class File_CoreWorkload extends Workload {
     }
 
     public String buildKeyName(long keynum) {
-        
+
+        if (!orderedinserts)
+        {
+            keynum=Utils.hash(keynum);
+        }
+        return "user"+keynum;
+
+    }
+
+    public String fetchKeyName(long keynum,Object thread_state) {
+
+        Pair<ResultHandler,Jedis> state = (Pair<ResultHandler, Jedis>) thread_state;
+        Jedis redis_client  = state.getRight();
+
         String key = "";
-        
+
         if(KEY_INPUT_SOURCE==REDIS_INPUT){
 
-           // key = redis_client.get(keynum+"");
-            key = redis_client.get(((int) (Math.random() * 100)) + "");
+            key = redis_client.get(keynum+"");
+
             if(key ==null){
                 System.out.println("Null on key: "+Long.toString(keynum));
             }
-            
+
         }else{
             key = files_keys.get((int) keynum);
         }
-//        if (!orderedinserts) {
-//            keynum = Utils.hash(keynum);
-//        }
+
         return key;
 
-        //  return "user" + keynum;
     }
-
+    
+    
+    
     HashMap<String, ByteIterator> buildValues() {
         HashMap<String, ByteIterator> values = new HashMap<String, ByteIterator>();
 
@@ -617,12 +631,16 @@ public class File_CoreWorkload extends Workload {
      * effects other than DB operations.
      */
     public boolean doTransaction(DB db, Object threadstate) {
+
+        Pair<ResultHandler,Jedis> state = (Pair<ResultHandler, Jedis>) threadstate;
+        ResultHandler resultHandler = state.getLeft();
+        
         String op = operationchooser.nextString();
 
         long init_transaction_time = System.currentTimeMillis();
 
         if (op.compareTo("READ") == 0) {
-            doTransactionRead(db);
+            doTransactionRead(db,threadstate);
         } else if (op.compareTo("UPDATE") == 0) {
             doTransactionUpdate(db);
         } else if (op.compareTo("INSERT") == 0) {
@@ -645,7 +663,7 @@ public class File_CoreWorkload extends Workload {
                 scan_lock.unlock();
             }
             else{
-                doTransactionRead(db);
+                doTransactionRead(db,threadstate);
             }
         } else {
             doTransactionReadModifyWrite(db);
@@ -677,11 +695,11 @@ public class File_CoreWorkload extends Workload {
         return keynum;
     }
 
-    public void doTransactionRead(DB db) {
+    public void doTransactionRead(DB db,Object thread_state) {
         //choose a random key
         int keynum = nextKeynum();
 
-        String keyname = buildKeyName(keynum);
+        String keyname = fetchKeyName(keynum,thread_state);
 
         HashSet<String> fields = null;
 
