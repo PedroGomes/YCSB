@@ -18,13 +18,16 @@
 package com.yahoo.ycsb.workloads;
 
 import com.yahoo.ycsb.*;
+import com.yahoo.ycsb.Client;
 import com.yahoo.ycsb.generator.*;
 import com.yahoo.ycsb.measurements.Measurements;
 import com.yahoo.ycsb.measurements.ResultHandler;
 import com.yahoo.ycsb.measurements.ResultStorage;
+import redis.clients.jedis.Jedis;
 
 import java.io.*;
 import java.util.*;
+import java.util.concurrent.locks.ReentrantLock;
 
 /**
  * The core benchmark scenario. Represents a set of clients doing simple CRUD operations. The relative
@@ -44,7 +47,7 @@ import java.util.*;
  * <LI><b>readmodifywriteproportion</b>: what proportion of operations should be read a record, modify it, write it back (default: 0)
  * <LI><b>requestdistribution</b>: what distribution should be used to select the records to operate on - uniform, zipfian, hotspot, or latest (default: uniform)
  * <LI><b>maxscanlength</b>: for scans, what is the maximum number of records to scan (default: 1000)
- * <LI><b>scanlengthdistribution</b>: for scans, what distribution should be used to choose the number of records to scan, 
+ * <LI><b>scanlengthdistribution</b>: for scans, what distribution should be used to choose the number of records to scan,
  * for each scan, between 1 and maxscanlength (default: uniform)
  * <LI><b>insertorder</b>: should records be inserted in order by key ("ordered"), or in hashed order ("hashed") (default: hashed)
  * </ul>
@@ -251,6 +254,12 @@ public class File_CoreWorkload extends Workload {
      */
     public static final String KEYS_FILE_PROPERTY = "keys_file";
 
+
+    /**
+     * The redis database address for key querying
+     */
+    public static final String REDIS_DATABASE_PROPERTY = "redis_database";
+
     /**
      * Querying mode for the files in the database.
      */
@@ -277,20 +286,28 @@ public class File_CoreWorkload extends Workload {
      */
     public static final String TRANSACTION_TIMELINES_FOLDER_PROPERTY = "transaction_timelines_folder";
 
-    /**
-     * Flag to decide if the transaction time-line is stored or not.
-     */
-    public static final String TRANSACTION_TIMELINES_STORE_PER_CLIENT= "transaction_timelines";
+    public static ReentrantLock scan_lock;
 
+    public static boolean scan_in_process = false;
+
+    public static boolean REDIS_INPUT = true;
+
+    public static boolean FILE_INPUT = false;
+
+    public static boolean KEY_INPUT_SOURCE = FILE_INPUT;
+
+    public static ArrayList<String> files_keys;
+
+    public static String redis_connection_info;
+
+    Jedis redis_client;
 
     ResultHandler resultHandler = null;
-
-    ArrayList<String> files_keys;
 
     boolean use_file_columns;
 
     boolean store_transaction_timelines;
-    
+
     String transaction_timeline_folder;
 
     IntegerGenerator keysequence;
@@ -429,41 +446,53 @@ public class File_CoreWorkload extends Workload {
             throw new WorkloadException("Distribution \"" + scanlengthdistrib + "\" not allowed for scan length");
         }
 
-        use_file_columns = Boolean.parseBoolean(p.getProperty(USE_FILE_COLUMNS_PROPERTY,USE_FILE_COLUMNS_DEFAULT_PROPERTY));
+        use_file_columns = Boolean.parseBoolean(p.getProperty(USE_FILE_COLUMNS_PROPERTY, USE_FILE_COLUMNS_DEFAULT_PROPERTY));
 
         files_keys = new ArrayList<String>();
 
         String keys_file_path = p.getProperty(KEYS_FILE_PROPERTY);
-     
+        String redis_database_info = p.getProperty(REDIS_DATABASE_PROPERTY);
 
-        FileInputStream input_file_stream;
-        try {
-            input_file_stream = new FileInputStream(keys_file_path);
-        } catch (FileNotFoundException e) {
-            throw new WorkloadException("Error when opening file for key retrieval: " + keys_file_path, e);
+        if (keys_file_path == null && redis_database_info == null) {
+            throw new WorkloadException("No input source for keys define a file with \"keys_file\" " +
+                    "or a redis database with \"redis_database\" ");
         }
 
-        BufferedReader input_reader = new BufferedReader(new InputStreamReader(input_file_stream));
+        if (keys_file_path != null) {
 
-        try {
-            String line = null;
-
-            while ((line = input_reader.readLine()) != null) {
-                files_keys.add(line.trim());
+            FileInputStream input_file_stream;
+            try {
+                input_file_stream = new FileInputStream(keys_file_path);
+            } catch (FileNotFoundException e) {
+                throw new WorkloadException("Error when opening file for key retrieval: " + keys_file_path, e);
             }
-        } catch (Exception e) {
-            throw new WorkloadException("Error when opening keys files", e);
+
+            BufferedReader input_reader = new BufferedReader(new InputStreamReader(input_file_stream));
+
+            try {
+                String line = null;
+
+                while ((line = input_reader.readLine()) != null) {
+                    files_keys.add(line.trim());
+                }
+            } catch (Exception e) {
+                throw new WorkloadException("Error when opening keys files", e);
+            }
+
+            try {
+                input_file_stream.close();
+            } catch (IOException e) {
+                throw new WorkloadException("Error when closing file after call retrieval.", e);
+            }
         }
 
-        try {
-            input_file_stream.close();
-        } catch (IOException e) {
-            throw new WorkloadException("Error when closing file after call retrieval.", e);
+        if (redis_database_info != null) {
+            redis_connection_info = redis_database_info;
         }
 
-        store_transaction_timelines = Boolean.parseBoolean(p.getProperty(STORE_TRANSACTION_TIMELINES_PROPERTY,STORE_TRANSACTION_TIMELINES_DEFAULT_PROPERTY));
- 
-        if(store_transaction_timelines){
+        store_transaction_timelines = Boolean.parseBoolean(p.getProperty(STORE_TRANSACTION_TIMELINES_PROPERTY, STORE_TRANSACTION_TIMELINES_DEFAULT_PROPERTY));
+
+        if (store_transaction_timelines) {
             transaction_timeline_folder = p.getProperty(TRANSACTION_TIMELINES_FOLDER_PROPERTY);
             if (transaction_timeline_folder == null) {
                 throw new WorkloadException("No output folder set for the transaction time-line storage. " +
@@ -471,50 +500,69 @@ public class File_CoreWorkload extends Workload {
             }
             File timeline_folder = new File(transaction_timeline_folder);
 
-            if(!timeline_folder.exists()){
+            if (!timeline_folder.exists()) {
                 boolean created = timeline_folder.mkdir();
-                if(!created){
+                if (!created) {
                     throw new WorkloadException("The output folder for the transaction time-line storage couldn't be created. Check if it is in a valid path");
                 }
             }
 
-            if(!timeline_folder.isDirectory()){
+            if (!timeline_folder.isDirectory()) {
                 System.out.println("The output folder for the transaction time-line storage is a file. Using enclosing folder");
                 timeline_folder = timeline_folder.getParentFile();
             }
-            
-            if(!timeline_folder.canWrite()){
+
+            if (!timeline_folder.canWrite()) {
                 throw new WorkloadException("The output folder for the transaction time-line storage is not writable. Check if it is in a valid path");
             }
 
-            ResultStorage.configure("YCSB",timeline_folder.getAbsolutePath(),ResultStorage.AGGREGATED_RESULTS);
+            ResultStorage.configure("YCSB", timeline_folder.getAbsolutePath(), ResultStorage.AGGREGATED_RESULTS);
         }
-   
+
+        scan_lock = new ReentrantLock();
     }
 
 
     @Override
     public Object initThread(Properties p, int mythreadid, int threadcount) throws WorkloadException {
-        if(store_transaction_timelines){
-            resultHandler =  ResultStorage.getQueryResultHandlerInstance(Integer.toString(mythreadid));
+        if (store_transaction_timelines) {
+            resultHandler = ResultStorage.getQueryResultHandlerInstance(Integer.toString(mythreadid));
         }
+        
+        if(KEY_INPUT_SOURCE = REDIS_INPUT){
+            String[] connection_info = redis_connection_info.split(":");
+            String host = connection_info[0];
+            String port = connection_info[1];
+            redis_client = new Jedis(host,Integer.parseInt(port));
+        }
+        
         return null;
     }
 
     @Override
     public void cleanup() throws WorkloadException {
-        if(store_transaction_timelines){
+        if (store_transaction_timelines) {
             ResultStorage.collect_and_print();
         }
     }
 
     public String buildKeyName(long keynum) {
+        
+        String key = "";
+        
+        if(KEY_INPUT_SOURCE==REDIS_INPUT){
+            key = redis_client.get(Long.toString(keynum));
+        }else{
+            key = files_keys.get((int) keynum);
+        }
+        
+        
 //        if (!orderedinserts) {
 //            keynum = Utils.hash(keynum);
 //        }
-        return files_keys.get((int)keynum);
+        return key;
 
-      //  return "user" + keynum;
+        //  return "user" + keynum;
     }
 
     HashMap<String, ByteIterator> buildValues() {
@@ -563,7 +611,7 @@ public class File_CoreWorkload extends Workload {
         String op = operationchooser.nextString();
 
         long init_transaction_time = System.currentTimeMillis();
-        
+
         if (op.compareTo("READ") == 0) {
             doTransactionRead(db);
         } else if (op.compareTo("UPDATE") == 0) {
@@ -571,17 +619,35 @@ public class File_CoreWorkload extends Workload {
         } else if (op.compareTo("INSERT") == 0) {
             doTransactionInsert(db);
         } else if (op.compareTo("SCAN") == 0) {
-            doTransactionScan(db);
+            
+            boolean do_scan =  false;
+            scan_lock.lock();
+
+            if(!scan_in_process){
+                scan_in_process = true;
+                do_scan = true;
+            }
+            scan_lock.unlock();
+
+            if(do_scan){
+                doTransactionScan(db);
+                scan_lock.lock();
+                scan_in_process = false;
+                scan_lock.unlock();
+            }
+            else{
+                doTransactionRead(db);
+            }
         } else {
             doTransactionReadModifyWrite(db);
         }
 
         long end_transaction_time = System.currentTimeMillis();
 
-        if(store_transaction_timelines){
-            resultHandler.recordTimeline(op,init_transaction_time,end_transaction_time);
+        if (store_transaction_timelines) {
+            resultHandler.recordTimeline(op, init_transaction_time, end_transaction_time);
         }
-        
+
         return true;
     }
 
@@ -612,9 +678,9 @@ public class File_CoreWorkload extends Workload {
 
         if (use_file_columns) {
             String[] folders_and_files = keyname.split("/");
-            
-            String fieldname = folders_and_files[folders_and_files.length-1];
-            keyname = keyname.replace("/"+fieldname,"");
+
+            String fieldname = folders_and_files[folders_and_files.length - 1];
+            keyname = keyname.replace("/" + fieldname, "");
 
             fields = new HashSet<String>();
             fields.add(fieldname);
@@ -673,7 +739,7 @@ public class File_CoreWorkload extends Workload {
         //choose a random scan length
         //int len = scanlength.nextInt();
         int len = recordcount;
-        
+
         HashSet<String> fields = null;
 
         if (!readallfields) {
