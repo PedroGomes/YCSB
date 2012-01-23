@@ -368,12 +368,15 @@ public class CassandraClient8 extends DB
         KeyRange kr = new KeyRange().setStart_key(startkey.getBytes("UTF-8")).setEnd_key(new byte[] {}).setCount(limit);
 
         List<KeySlice> results = new ArrayList<KeySlice>();
+        int size = 0;
 
           boolean finished =  false;
           while (!finished){
 
+              size += results.size();
               //For memory purposes we choose this way
               results = new ArrayList<KeySlice>();
+
 
               List<KeySlice> temp_results = client.get_range_slices(parent, predicate, kr, scan_ConsistencyLevel);
 
@@ -387,6 +390,8 @@ public class CassandraClient8 extends DB
                results.add(keySlice);
             }
         }
+
+        System.out.println("(debug) scan size: "+size);
 
         if (_debug)
         {
