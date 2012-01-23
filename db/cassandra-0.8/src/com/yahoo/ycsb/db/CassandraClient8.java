@@ -373,7 +373,7 @@ public class CassandraClient8 extends DB
           boolean finished =  false;
           while (!finished){
 
-              size += results.size();
+
               //For memory purposes we choose this way
               results = new ArrayList<KeySlice>();
 
@@ -389,6 +389,7 @@ public class CassandraClient8 extends DB
             for(KeySlice keySlice: temp_results){
                results.add(keySlice);
             }
+            size += results.size();
         }
 
         System.out.println("(debug) scan size: "+size);
