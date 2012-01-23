@@ -534,10 +534,10 @@ public class File_CoreWorkload extends Workload {
         }
         
         if(KEY_INPUT_SOURCE = REDIS_INPUT){
-            String[] connection_info = redis_connection_info.split(":");
-            String host = connection_info[0];
-            String port = connection_info[1];
-            redis_client = new Jedis(host,Integer.parseInt(port));
+//            String[] connection_info = redis_connection_info.split(":");
+//            String host = connection_info[0];
+//            String port = connection_info[1];
+//            redis_client = new Jedis(host,Integer.parseInt(port));
         }
         
         return null;
@@ -557,7 +557,10 @@ public class File_CoreWorkload extends Workload {
         if(KEY_INPUT_SOURCE==REDIS_INPUT){
 
             if(redis_client==null){
-                System.out.println("Client is null");
+                String[] connection_info = redis_connection_info.split(":");
+                String host = connection_info[0];
+                String port = connection_info[1];
+                redis_client = new Jedis(host,Integer.parseInt(port));
             }
             key = redis_client.get(Long.toString(keynum));
             if(key ==null){
