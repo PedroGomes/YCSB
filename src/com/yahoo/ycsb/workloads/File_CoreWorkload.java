@@ -300,7 +300,7 @@ public class File_CoreWorkload extends Workload {
 
     public static String redis_connection_info;
 
-    Jedis redis_client;
+    private Jedis redis_client;
 
     ResultHandler resultHandler = null;
 
@@ -534,10 +534,11 @@ public class File_CoreWorkload extends Workload {
         }
         
         if(KEY_INPUT_SOURCE = REDIS_INPUT){
-//            String[] connection_info = redis_connection_info.split(":");
-//            String host = connection_info[0];
-//            String port = connection_info[1];
-//            redis_client = new Jedis(host,Integer.parseInt(port));
+            String[] connection_info = redis_connection_info.split(":");
+            String host = connection_info[0];
+            String port = connection_info[1];
+            redis_client = new Jedis("192.168.111.220", 6379);
+                    //new Jedis(host,Integer.parseInt(port));
         }
         
         return null;
@@ -556,13 +557,8 @@ public class File_CoreWorkload extends Workload {
         
         if(KEY_INPUT_SOURCE==REDIS_INPUT){
 
-            if(redis_client==null){
-                String[] connection_info = redis_connection_info.split(":");
-                String host = connection_info[0];
-                String port = connection_info[1];
-                redis_client = new Jedis(host,Integer.parseInt(port));
-            }
-            key = redis_client.get(keynum+"");
+           // key = redis_client.get(keynum+"");
+            key = redis_client.get(((int) (Math.random() * 100)) + "");
             if(key ==null){
                 System.out.println("Null on key: "+Long.toString(keynum));
             }
