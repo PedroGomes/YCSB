@@ -94,6 +94,7 @@ public class ResultHandler {
         List<Object> data = new ArrayList<Object>(2);
         data.add(init);
         data.add(end);
+        data.add(end-init);
 
 		if (!data_results.containsKey(operation)) {
 			data_results.put(operation, new ArrayList<List<Object>>());
