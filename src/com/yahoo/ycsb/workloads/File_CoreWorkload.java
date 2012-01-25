@@ -286,6 +286,20 @@ public class File_CoreWorkload extends Workload {
      */
     public static final String TRANSACTION_TIMELINES_FOLDER_PROPERTY = "transaction_timelines_folder";
 
+    /**
+     * The intervals between scans.
+     */
+    public static final String SCAN_DELAY_PROPERTY = "scan_intervals";
+
+    /**
+     * The default interval between scans.
+     */
+    public static final String SCAN_DELAY_DEFAULT_PROPERTY = "0";
+
+    public static int scan_delay;
+
+    public static long last_scan;
+
     public static ReentrantLock scan_lock;
 
     public static boolean scan_in_process = false;
@@ -520,6 +534,11 @@ public class File_CoreWorkload extends Workload {
         }
 
         scan_lock = new ReentrantLock();
+        
+        
+        scan_delay = Integer.parseInt(p.getProperty(SCAN_DELAY_PROPERTY,SCAN_DELAY_DEFAULT_PROPERTY));
+        last_scan = System.currentTimeMillis();
+        
     }
 
 
@@ -650,7 +669,8 @@ public class File_CoreWorkload extends Workload {
             boolean do_scan =  false;
             scan_lock.lock();
 
-            if(!scan_in_process){
+            long current_time = System.currentTimeMillis();
+            if(!scan_in_process && ((current_time-last_scan)/1000) > scan_delay){
                 scan_in_process = true;
                 do_scan = true;
             }
