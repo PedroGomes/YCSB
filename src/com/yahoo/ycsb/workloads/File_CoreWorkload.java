@@ -670,7 +670,7 @@ public class File_CoreWorkload extends Workload {
             scan_lock.lock();
 
             long current_time = System.currentTimeMillis();
-            if(!scan_in_process && ((current_time-last_scan)/1000) > scan_delay){
+            if(!scan_in_process && ((current_time-last_scan)/1000) >= scan_delay){
                 scan_in_process = true;
                 do_scan = true;
             }
@@ -680,6 +680,7 @@ public class File_CoreWorkload extends Workload {
                 doTransactionScan(db);
                 scan_lock.lock();
                 scan_in_process = false;
+                last_scan = System.currentTimeMillis();
                 scan_lock.unlock();
             }
             else{
