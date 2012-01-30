@@ -140,7 +140,7 @@ public class CassandraClient8 extends DB {
         client = client_connection.getLeft();
         tr = client_connection.getRight();
 
-        System.out.println("(debug:) client connection to "+myhost);
+       // System.out.println("(debug:) client connection to "+myhost);
 
         String scan_hosts = getProperties().getProperty(SCAN_CONNECTIONS_PROPERTY);
         if(scan_hosts!=null&&!scan_hosts.trim().isEmpty()){
@@ -153,7 +153,7 @@ public class CassandraClient8 extends DB {
             scan_tr= client_connection.getRight();
         }
 
-        System.out.println("(debug:) scan connection to "+myhost);
+      //  System.out.println("(debug:) scan connection to "+myhost);
 
     }
 
