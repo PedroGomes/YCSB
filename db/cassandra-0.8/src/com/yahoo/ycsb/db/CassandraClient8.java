@@ -83,6 +83,8 @@ public class CassandraClient8 extends DB {
     boolean _debug = false;
 
     String _table = "";
+    String _scan_table = "";
+
     Exception errorexception = null;
 
     List<Mutation> mutations = new ArrayList<Mutation>();
@@ -339,10 +341,10 @@ public class CassandraClient8 extends DB {
             used_client = client;
         }
 
-        if (!_table.equals(table)) {
+        if (!_scan_table.equals(table)) {
             try {
                 used_client.set_keyspace(table);
-                _table = table;
+                _scan_table = table;
             } catch (Exception e) {
                 e.printStackTrace();
                 e.printStackTrace(System.out);
