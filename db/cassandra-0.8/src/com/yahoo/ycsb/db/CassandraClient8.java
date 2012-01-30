@@ -153,7 +153,7 @@ public class CassandraClient8 extends DB {
             scan_tr= client_connection.getRight();
         }
 
-      //  System.out.println("(debug:) scan connection to "+myhost);
+        System.out.println("(debug:) scan connection to "+myhost+" SCL: "+scan_ConsistencyLevel);
 
     }
 
@@ -238,7 +238,6 @@ public class CassandraClient8 extends DB {
             scan_tr.close();
         }
     }
-
     /**
      * Read a record from the database. Each field/value pair from the result will
      * be stored in a HashMap.
