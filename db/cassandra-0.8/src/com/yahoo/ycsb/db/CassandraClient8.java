@@ -132,26 +132,31 @@ public class CassandraClient8 extends DB {
         _debug = Boolean.parseBoolean(getProperties().getProperty("debug", "false"));
 
         String[] allhosts = hosts.split(",");
-        Pair<Cassandra.Client, TTransport> client_connection = makeConnection(username, password, allhosts);
+        String myhost = allhosts[random.nextInt(allhosts.length)];
+        Pair<Cassandra.Client, TTransport> client_connection = makeConnection(username, password, myhost);
         client = client_connection.getLeft();
         tr = client_connection.getRight();
+
+        System.out.println("(debug:) client connection to "+myhost);
 
         String scan_hosts = getProperties().getProperty("SCAN_CONNECTIONS_PROPERTY");
         if(scan_hosts!=null&&!scan_hosts.trim().isEmpty()){
             using_scan_connection=true;
             allhosts = scan_hosts.split(",");
-            client_connection = makeConnection(username, password, allhosts);
+            myhost = allhosts[random.nextInt(allhosts.length)];
+            client_connection = makeConnection(username, password, myhost);
             scan_client = client_connection.getLeft();
             scan_tr= client_connection.getRight();
         }
 
+        System.out.println("(debug:) scan connection to "+myhost);
+
     }
 
-    public Pair<Cassandra.Client, TTransport> makeConnection(String username, String password, String[] hosts) throws DBException {
+    public Pair<Cassandra.Client, TTransport> makeConnection(String username, String password, String myhost) throws DBException {
 
         TTransport connection_tr = null;
         Cassandra.Client db_client = null;
-        String myhost = hosts[random.nextInt(hosts.length)];
 
         Exception connectexception = null;
 
@@ -386,7 +391,7 @@ public class CassandraClient8 extends DB {
                     size += results.size();
                 }
 
-                System.out.println("(debug) scan size: " + size);
+                System.out.println("(debug) scan size: " + size +"on connection? "+using_scan_connection);
 
                 if (_debug) {
                     System.out.println("Scanning startkey: " + startkey);
