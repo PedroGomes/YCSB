@@ -133,6 +133,7 @@ public class CassandraClient8 extends DB {
 
         String[] allhosts = hosts.split(",");
         String myhost = allhosts[random.nextInt(allhosts.length)];
+        System.out.println(java.util.Arrays.toString(allhosts));
         Pair<Cassandra.Client, TTransport> client_connection = makeConnection(username, password, myhost);
         client = client_connection.getLeft();
         tr = client_connection.getRight();
@@ -143,6 +144,7 @@ public class CassandraClient8 extends DB {
         if(scan_hosts!=null&&!scan_hosts.trim().isEmpty()){
             using_scan_connection=true;
             allhosts = scan_hosts.split(",");
+            System.out.println(java.util.Arrays.toString(allhosts));
             myhost = allhosts[random.nextInt(allhosts.length)];
             client_connection = makeConnection(username, password, myhost);
             scan_client = client_connection.getLeft();
