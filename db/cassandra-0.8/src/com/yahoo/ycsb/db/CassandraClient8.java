@@ -141,6 +141,7 @@ public class CassandraClient8 extends DB {
         System.out.println("(debug:) client connection to "+myhost);
 
         String scan_hosts = getProperties().getProperty("SCAN_CONNECTIONS_PROPERTY");
+        System.out.println("Under,"+SCAN_CONNECTIONS_PROPERTY+", "+ scan_hosts);
         if(scan_hosts!=null&&!scan_hosts.trim().isEmpty()){
             using_scan_connection=true;
             allhosts = scan_hosts.split(",");
