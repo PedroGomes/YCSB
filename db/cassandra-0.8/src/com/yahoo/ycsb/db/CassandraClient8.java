@@ -395,7 +395,7 @@ public class CassandraClient8 extends DB {
                     size += results.size();
                 }
 
-                System.out.println("(debug) scan size: " + size +"on connection? "+using_scan_connection);
+                System.out.println("(debug) scan size: " + size +"consitency "+scan_ConsistencyLevel.name());
 
                 if (_debug) {
                     System.out.println("Scanning startkey: " + startkey);
