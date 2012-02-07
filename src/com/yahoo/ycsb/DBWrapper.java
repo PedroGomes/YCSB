@@ -108,7 +108,9 @@ public class DBWrapper extends DB
 		long st=System.nanoTime();
 		int res=_db.scan(table,startkey,recordcount,fields,result);
 		long en=System.nanoTime();
-		_measurements.measure("SCAN",(int)((en-st)/1000));
+        int time = (int)((en-st)/1000);
+        time = (time<0) ? Integer.MAX_VALUE : time;
+		_measurements.measure("SCAN",time);
 		_measurements.reportReturnCode("SCAN",res);
 		return res;
 	}
