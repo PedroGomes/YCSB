@@ -291,12 +291,22 @@ public class File_CoreWorkload extends Workload {
      */
     public static final String SCAN_DELAY_PROPERTY = "scan_intervals";
 
+
+    /**
+     * The number of scans to be executed.
+     */
+    public static final String SCANS_TO_EXECUTE_PROPERTY = "scans_executed";
+    
     /**
      * The default interval between scans.
      */
     public static final String SCAN_DELAY_DEFAULT_PROPERTY = "0";
 
     public static int scan_delay;
+    
+    public static int number_of_scans;
+   
+    public static int executed_scans = 0;
 
     public static long last_scan;
 
@@ -537,6 +547,8 @@ public class File_CoreWorkload extends Workload {
         
         
         scan_delay = Integer.parseInt(p.getProperty(SCAN_DELAY_PROPERTY,SCAN_DELAY_DEFAULT_PROPERTY));
+        number_of_scans = Integer.parseInt(p.getProperty(SCANS_TO_EXECUTE_PROPERTY,"-1"));
+
         last_scan = System.currentTimeMillis();
         
     }
@@ -669,11 +681,13 @@ public class File_CoreWorkload extends Workload {
             boolean do_scan =  false;
             scan_lock.lock();
 
-            long current_time = System.currentTimeMillis();
-            if(!scan_in_process && ((current_time-last_scan)/1000) >= scan_delay){
-                scan_in_process = true;
-                do_scan = true;
-            }
+                long current_time = System.currentTimeMillis();
+                if(!scan_in_process && ((current_time-last_scan)/1000) >= scan_delay
+                        && (number_of_scans == -1 || executed_scans < number_of_scans) ){
+                    scan_in_process = true;
+                    do_scan = true;
+                    executed_scans ++;
+                }
             scan_lock.unlock();
 
             if(do_scan){
