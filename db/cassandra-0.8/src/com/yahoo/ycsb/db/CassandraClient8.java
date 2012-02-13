@@ -140,7 +140,7 @@ public class CassandraClient8 extends DB {
         client = client_connection.getLeft();
         tr = client_connection.getRight();
 
-        System.out.println("(debug:) client connection to "+myhost+" RCL: "+read_ConsistencyLevel);
+        //System.out.println("(debug:) client connection to "+myhost+" RCL: "+read_ConsistencyLevel);
 
         scan_cons_trp = new TreeMap<String, TTransport>();
         scan_clients = new TreeMap<String, Cassandra.Client>();
@@ -159,7 +159,7 @@ public class CassandraClient8 extends DB {
 
         tokenized_scans = Boolean.parseBoolean(getProperties().getProperty(TOKENIZED_SCANS_PROPERTY, "false"));
 
-        System.out.println("(debug:) scan connection to "+myhost+" SCL: "+scan_ConsistencyLevel);
+      //  System.out.println("(debug:) scan connection to "+myhost+" SCL: "+scan_ConsistencyLevel);
 
     }
 
@@ -395,40 +395,57 @@ public class CassandraClient8 extends DB {
                         String start_token  = token_endpoints.get(endpoint_host).getLeft();
                         String end_token = token_endpoints.get(endpoint_host).getRight();
 
+                        System.out.println("(debug:) scan using client "+endpoint_host);
+
                         used_client = scan_clients.get(endpoint_host);
                         if (!_scan_table.equals(table)) {
                             used_client.set_keyspace(table);
                         }
 
-                        KeyRange kr = new KeyRange().setStart_key(start_token.getBytes()).setEnd_key(end_token.getBytes()).setCount(limit);
+                        List<String> splits =  used_client.describe_splits(column_family,start_token,end_token,limit);
+
+                        String scan_start_token = splits.get(0);
+                        String scan_end_token = splits.get(1);
+                        int token_index = 2;
 
                         boolean finished = false;
 
                         while (!finished) {
+
+                            KeyRange kr = new KeyRange().setStart_token(scan_start_token).setEnd_token(scan_end_token).setCount(limit);
 
                             //For memory purposes we choose this way
                             results = new ArrayList<KeySlice>();
 
                             List<KeySlice> temp_results = used_client.get_range_slices(parent, predicate, kr, scan_ConsistencyLevel);
 
-                            if (temp_results.size() < limit) {
-                                finished = true;
-                            } else {
-                                kr.setStart_key(temp_results.get(temp_results.size() - 1).getKey());
-                            }
-
                             for (KeySlice keySlice : temp_results) {
                                 results.add(keySlice);
                             }
+
                             size += results.size();
+
+                            if(token_index >= splits.size()){
+
+                                finished = true;
+
+                            }else{
+
+                                if (temp_results.size() < limit) {
+                                    System.out.println("(debug): Strange low result on range:"+temp_results.size());
+                                }
+
+                                scan_start_token = scan_end_token;
+                                scan_end_token = splits.get(token_index);
+                                token_index++;
+
+                            }
                         }
-
                     }
-                    _scan_table = table;
-                    
-                    
-                }else{
 
+                    _scan_table = table;
+
+                }else{
 
                     if (!_scan_table.equals(table)) {
                         used_client.set_keyspace(table);
@@ -665,6 +682,12 @@ public class CassandraClient8 extends DB {
                       System.out.println(" : "+epd.getHost());
                   }
                }
+
+               cli.client.set_keyspace("Eurotux");
+               List<String> splits =  cli.client.describe_splits("File_system",trange.getStart_token(),trange.getEnd_token(),2000);
+
+               System.out.println(splits.toString());
+
            }
             
             
