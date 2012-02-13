@@ -377,23 +377,29 @@ public class CassandraClient8 extends DB {
                 List<KeySlice> results = new ArrayList<KeySlice>();
                 int size = 0;
 
-                if(tokenized_scans){
-                    Map<String,Pair<String,String>> token_endpoints = new HashMap<String, Pair<String, String>>();
-                    
+                if(tokenized_scans){              
                     List<TokenRange> tr = used_client.describe_ring("Eurotux");
+
+                    List<Pair<String,Pair<String, String>>>  token_endpoints = new ArrayList<Pair<String, Pair<String, String>>>(tr.size());
+                  //  Map<String,Pair<String,String>> token_endpoints = new HashMap<String, Pair<String, String>>();
+                    
                     for(TokenRange trange : tr){
                         String start_token  = trange.getStart_token();
                         String end_token = trange.getEnd_token();
                         for (EndpointDetails epd : trange.getEndpoint_details()){
                             if(epd.getDatacenter().equals("DC2")){
-                               token_endpoints.put(epd.getHost(),new Pair<String, String>(start_token,end_token));
+                               token_endpoints.add(new Pair<String, Pair<String, String>>(epd.getHost(), new Pair<String, String>(start_token, end_token)));
                             }
                         }
                     }
                     
-                    for(String endpoint_host : token_endpoints.keySet()){
-                        String start_token  = token_endpoints.get(endpoint_host).getLeft();
-                        String end_token = token_endpoints.get(endpoint_host).getRight();
+                    for(Pair<String,Pair<String, String>> endpoint_info : token_endpoints){
+
+
+
+                        String endpoint_host =  endpoint_info.getLeft();
+                        String start_token  = endpoint_info.getRight().getLeft();
+                        String end_token = endpoint_info.getRight().getRight();
 
                         System.out.println("(debug:) scan using client "+endpoint_host);
 
@@ -431,9 +437,9 @@ public class CassandraClient8 extends DB {
 
                             }else{
 
-                                if (temp_results.size() < limit) {
-                                    System.out.println("(debug): Strange low result on range:"+temp_results.size());
-                                }
+//                                if (temp_results.size() < limit && splits.size()>2) {
+//                                    System.out.println("(debug): Strange low result on range:"+temp_results.size());
+//                                }
 
                                 scan_start_token = scan_end_token;
                                 scan_end_token = splits.get(token_index);
@@ -655,9 +661,6 @@ public class CassandraClient8 extends DB {
 
         Properties props = new Properties();
 
-        
-        
-        
         //props.setProperty("hosts", args[0]);
         props.setProperty("hosts", "192.168.111.221");
         
