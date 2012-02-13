@@ -431,15 +431,16 @@ public class CassandraClient8 extends DB {
                                 System.out.println("(debug:) Strange size: "+result.size());
                             }
 
-                            if(token_index == splits.size()){
-
+                            if(token_index >= splits.size()){
+                                finished = true;
                                 token_index++;
 
-                            }else if(token_index > splits.size()){
-                                finished = true;
-
-
                             }
+// else if(token_index > splits.size()){
+//                                finished = true;
+//
+//
+//                          }
                             else{
 
                                 scan_start_token = scan_end_token;
