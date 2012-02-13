@@ -29,7 +29,6 @@ import org.apache.thrift.transport.TSocket;
 import org.apache.thrift.protocol.TProtocol;
 import org.apache.thrift.protocol.TBinaryProtocol;
 import org.apache.cassandra.thrift.*;
-import sun.rmi.rmic.iiop.StaticStringsHash;
 
 
 //XXXX if we do replication, fix the consistency levels
