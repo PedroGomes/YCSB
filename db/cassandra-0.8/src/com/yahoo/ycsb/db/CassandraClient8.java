@@ -19,23 +19,17 @@ package com.yahoo.ycsb.db;
 
 import com.yahoo.ycsb.*;
 
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Map;
-import java.util.Set;
-import java.util.HashMap;
-import java.util.HashSet;
-import java.util.Vector;
-import java.util.Random;
-import java.util.Properties;
+import java.util.*;
 import java.nio.ByteBuffer;
 
+import org.apache.thrift.TException;
 import org.apache.thrift.transport.TTransport;
 import org.apache.thrift.transport.TFramedTransport;
 import org.apache.thrift.transport.TSocket;
 import org.apache.thrift.protocol.TProtocol;
 import org.apache.thrift.protocol.TBinaryProtocol;
 import org.apache.cassandra.thrift.*;
+import sun.rmi.rmic.iiop.StaticStringsHash;
 
 
 //XXXX if we do replication, fix the consistency levels
@@ -73,12 +67,19 @@ public class CassandraClient8 extends DB {
 
     public static final String SCAN_CONNECTIONS_PROPERTY = "cassandra.scan_connections";
 
+    public static final String TOKENIZED_SCANS_PROPERTY = "cassandra.tokenized_scans";
+
+
     TTransport tr;
     Cassandra.Client client;
 
     boolean using_scan_connection = false;
-    TTransport scan_tr;
-    Cassandra.Client scan_client;
+
+    Map<String,TTransport> scan_cons_trp;
+    Map<String,Cassandra.Client> scan_clients;
+
+    public boolean tokenized_scans = false;
+
 
     boolean _debug = false;
 
@@ -120,13 +121,13 @@ public class CassandraClient8 extends DB {
         String username = getProperties().getProperty(USERNAME_PROPERTY);
         String password = getProperties().getProperty(PASSWORD_PROPERTY);
 
-        row_buffer = Integer.parseInt(getProperties().getProperty(ROW_BUFFER_PROPERTY));
+        row_buffer = Integer.parseInt(getProperties().getProperty(ROW_BUFFER_PROPERTY,"1000"));
 
         try {
 
-            read_ConsistencyLevel = getConsistencyLevel(getProperties().getProperty(READ_CONSISTENCY_PROPERTY));
-            write_ConsistencyLevel = getConsistencyLevel(getProperties().getProperty(WRITE_CONSISTENCY_PROPERTY));
-            scan_ConsistencyLevel = getConsistencyLevel(getProperties().getProperty(SCAN_CONSISTENCY_PROPERTY));
+            read_ConsistencyLevel = getConsistencyLevel(getProperties().getProperty(READ_CONSISTENCY_PROPERTY,"QUORUM"));
+            write_ConsistencyLevel = getConsistencyLevel(getProperties().getProperty(WRITE_CONSISTENCY_PROPERTY,"QUORUM"));
+            scan_ConsistencyLevel = getConsistencyLevel(getProperties().getProperty(SCAN_CONSISTENCY_PROPERTY,"ONE"));
         } catch (Exception e) {
             throw new DBException(e);
         }
@@ -142,16 +143,22 @@ public class CassandraClient8 extends DB {
 
         System.out.println("(debug:) client connection to "+myhost+" RCL: "+read_ConsistencyLevel);
 
+        scan_cons_trp = new TreeMap<String, TTransport>();
+        scan_clients = new TreeMap<String, Cassandra.Client>();
+
         String scan_hosts = getProperties().getProperty(SCAN_CONNECTIONS_PROPERTY);
         if(scan_hosts!=null&&!scan_hosts.trim().isEmpty()){
             using_scan_connection=true;
             allhosts = scan_hosts.split(",");
-       //     System.out.println(java.util.Arrays.toString(allhosts));
-            myhost = allhosts[random.nextInt(allhosts.length)];
-            client_connection = makeConnection(username, password, myhost);
-            scan_client = client_connection.getLeft();
-            scan_tr= client_connection.getRight();
+            for(String cass_scan_host : allhosts){
+                client_connection = makeConnection(username, password, cass_scan_host);
+                scan_clients.put(cass_scan_host,client_connection.getLeft());
+                scan_cons_trp.put(cass_scan_host, client_connection.getRight());
+            }
+            
         }
+
+        tokenized_scans = Boolean.parseBoolean(getProperties().getProperty(TOKENIZED_SCANS_PROPERTY, "false"));
 
         System.out.println("(debug:) scan connection to "+myhost+" SCL: "+scan_ConsistencyLevel);
 
@@ -235,7 +242,8 @@ public class CassandraClient8 extends DB {
     public void cleanup() throws DBException {
         tr.close();
         if(using_scan_connection){
-            scan_tr.close();
+            for(TTransport scan_con_trp :scan_cons_trp.values())
+                scan_con_trp.close();
         }
     }
     /**
@@ -335,21 +343,12 @@ public class CassandraClient8 extends DB {
 
         Cassandra.Client used_client;
         if(using_scan_connection){
-            used_client =scan_client;
+            used_client = scan_clients.get(random.nextInt(scan_clients.size()));
         }else{
             used_client = client;
         }
 
-        if (!_scan_table.equals(table)) {
-            try {
-                used_client.set_keyspace(table);
-                _scan_table = table;
-            } catch (Exception e) {
-                e.printStackTrace();
-                e.printStackTrace(System.out);
-                return Error;
-            }
-        }
+
 
         for (int i = 0; i < OperationRetries; i++) {
 
@@ -369,30 +368,93 @@ public class CassandraClient8 extends DB {
 
                 int limit = (recordcount < row_buffer) ? recordcount : row_buffer;
 
-                KeyRange kr = new KeyRange().setStart_key(startkey.getBytes("UTF-8")).setEnd_key(new byte[]{}).setCount(limit);
-
                 List<KeySlice> results = new ArrayList<KeySlice>();
                 int size = 0;
 
-                boolean finished = false;
-                while (!finished) {
+                if(tokenized_scans){
+                    Map<String,Pair<String,String>> token_endpoints = new HashMap<String, Pair<String, String>>();
+                    
+                    List<TokenRange> tr = used_client.describe_ring("Eurotux");
+                    for(TokenRange trange : tr){
+                        String start_token  = trange.getStart_token();
+                        String end_token = trange.getEnd_token();
+                        for (EndpointDetails epd : trange.getEndpoint_details()){
+                            if(epd.getDatacenter().equals("DC2")){
+                               token_endpoints.put(epd.getHost(),new Pair<String, String>(start_token,end_token));
+                            }
+                        }
+                    }
+                    
+                    for(String endpoint_host : token_endpoints.keySet()){
+                        String start_token  = token_endpoints.get(endpoint_host).getLeft();
+                        String end_token = token_endpoints.get(endpoint_host).getRight();
 
-                    //For memory purposes we choose this way
-                    results = new ArrayList<KeySlice>();
+                        used_client = scan_clients.get(endpoint_host);
+                        if (!_scan_table.equals(table)) {
+                            used_client.set_keyspace(table);
+                        }
 
-                    List<KeySlice> temp_results = used_client.get_range_slices(parent, predicate, kr, scan_ConsistencyLevel);
+                        KeyRange kr = new KeyRange().setStart_token(start_token).setEnd_token(end_token).setCount(limit);
 
-                    if (temp_results.size() < limit) {
-                        finished = true;
-                    } else {
-                        kr.setStart_key(temp_results.get(temp_results.size() - 1).getKey());
+                        boolean finished = false;
+
+                        while (!finished) {
+
+                            //For memory purposes we choose this way
+                            results = new ArrayList<KeySlice>();
+
+                            List<KeySlice> temp_results = used_client.get_range_slices(parent, predicate, kr, scan_ConsistencyLevel);
+
+                            if (temp_results.size() < limit) {
+                                finished = true;
+                            } else {
+                                kr.setStart_key(temp_results.get(temp_results.size() - 1).getKey());
+                            }
+
+                            for (KeySlice keySlice : temp_results) {
+                                results.add(keySlice);
+                            }
+                            size += results.size();
+                        }
+
+                    }
+                    _scan_table = table;
+                    
+                    
+                }else{
+
+
+                    if (!_scan_table.equals(table)) {
+                        used_client.set_keyspace(table);
+                        _scan_table = table;
+
                     }
 
-                    for (KeySlice keySlice : temp_results) {
-                        results.add(keySlice);
+                    KeyRange kr = new KeyRange().setStart_key(startkey.getBytes("UTF-8")).setEnd_key(new byte[]{}).setCount(limit);
+
+                    boolean finished = false;
+
+                    while (!finished) {
+
+                        //For memory purposes we choose this way
+                        results = new ArrayList<KeySlice>();
+
+                        List<KeySlice> temp_results = used_client.get_range_slices(parent, predicate, kr, scan_ConsistencyLevel);
+
+                        if (temp_results.size() < limit) {
+                            finished = true;
+                        } else {
+                            kr.setStart_key(temp_results.get(temp_results.size() - 1).getKey());
+                        }
+
+                        for (KeySlice keySlice : temp_results) {
+                            results.add(keySlice);
+                        }
+                        size += results.size();
                     }
-                    size += results.size();
                 }
+                
+              
 
                 System.out.println("(debug) scan size: " + size +"consitency "+scan_ConsistencyLevel.name());
 
@@ -570,7 +632,12 @@ public class CassandraClient8 extends DB {
 
         Properties props = new Properties();
 
-        props.setProperty("hosts", args[0]);
+        
+        
+        
+        //props.setProperty("hosts", args[0]);
+        props.setProperty("hosts", "192.168.111.221");
+        
         cli.setProperties(props);
 
         try {
@@ -580,72 +647,47 @@ public class CassandraClient8 extends DB {
             System.exit(0);
         }
 
-        HashMap<String, ByteIterator> vals = new HashMap<String, ByteIterator>();
-        vals.put("age", new StringByteIterator("57"));
-        vals.put("middlename", new StringByteIterator("bradley"));
-        vals.put("favoritecolor", new StringByteIterator("blue"));
-        int res = cli.insert("usertable", "BrianFrankCooper", vals);
-        System.out.println("Result of insert: " + res);
-
-        HashMap<String, ByteIterator> result = new HashMap<String, ByteIterator>();
-        HashSet<String> fields = new HashSet<String>();
-        fields.add("middlename");
-        fields.add("age");
-        fields.add("favoritecolor");
-        res = cli.read("usertable", "BrianFrankCooper", null, result);
-        System.out.println("Result of read: " + res);
-        for (String s : result.keySet()) {
-            System.out.println("[" + s + "]=[" + result.get(s) + "]");
+        try {
+            
+            
+           List<TokenRange> tr = cli.client.describe_ring("Eurotux");
+           for(TokenRange trange : tr){
+               System.out.print(trange.getStart_token());
+               System.out.print(" - "+trange.getEnd_token());
+               for (EndpointDetails epd : trange.getEndpoint_details()){
+                  if(epd.getDatacenter().equals("DC2")){
+                      System.out.println(" : "+epd.getHost());
+                  }
+               }
+           }
+            
+            
+        } catch (InvalidRequestException e) {
+            e.printStackTrace();  //To change body of catch statement use File | Settings | File Templates.
+        } catch (TException e) {
+            e.printStackTrace();  //To change body of catch statement use File | Settings | File Templates.
         }
-
-        res = cli.delete("usertable", "BrianFrankCooper");
-        System.out.println("Result of delete: " + res);
+//
+//        HashMap<String, ByteIterator> vals = new HashMap<String, ByteIterator>();
+//        vals.put("age", new StringByteIterator("57"));
+//        vals.put("middlename", new StringByteIterator("bradley"));
+//        vals.put("favoritecolor", new StringByteIterator("blue"));
+//        int res = cli.insert("usertable", "BrianFrankCooper", vals);
+//        System.out.println("Result of insert: " + res);
+//
+//        HashMap<String, ByteIterator> result = new HashMap<String, ByteIterator>();
+//        HashSet<String> fields = new HashSet<String>();
+//        fields.add("middlename");
+//        fields.add("age");
+//        fields.add("favoritecolor");
+//        res = cli.read("usertable", "BrianFrankCooper", null, result);
+//        System.out.println("Result of read: " + res);
+//        for (String s : result.keySet()) {
+//            System.out.println("[" + s + "]=[" + result.get(s) + "]");
+//        }
+//
+//        res = cli.delete("usertable", "BrianFrankCooper");
+//        System.out.println("Result of delete: " + res);
     }
 
-    /*
-    * public static void main(String[] args) throws TException,
-    * InvalidRequestException, UnavailableException,
-    * UnsupportedEncodingException, NotFoundException {
-    *
-    *
-    *
-    * String key_user_id = "1";
-    *
-    *
-    *
-    *
-    * client.insert("Keyspace1", key_user_id, new ColumnPath("Standard1", null,
-    * "age".getBytes("UTF-8")), "24".getBytes("UTF-8"), timestamp,
-    * ConsistencyLevel.ONE);
-    *
-    *
-    * // read single column ColumnPath path = new ColumnPath("Standard1", null,
-    * "name".getBytes("UTF-8"));
-    *
-    * System.out.println(client.get("Keyspace1", key_user_id, path,
-    * ConsistencyLevel.ONE));
-    *
-    *
-    * // read entire row SlicePredicate predicate = new SlicePredicate(null, new
-    * SliceRange(new byte[0], new byte[0], false, 10));
-    *
-    * ColumnParent parent = new ColumnParent("Standard1", null);
-    *
-    * List<ColumnOrSuperColumn> results = client.get_slice("Keyspace1",
-    * key_user_id, parent, predicate, ConsistencyLevel.ONE);
-    *
-    * for (ColumnOrSuperColumn result : results) {
-    *
-    * Column column = result.column;
-    *
-    * System.out.println(new String(column.name, "UTF-8") + " -> " + new
-    * String(column.value, "UTF-8"));
-    *
-    * }
-    *
-    *
-    *
-    *
-    * }
-    */
 }
