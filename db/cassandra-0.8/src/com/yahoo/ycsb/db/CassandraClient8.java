@@ -414,7 +414,7 @@ public class CassandraClient8 extends DB {
 
                         while (!finished) {
 
-                            KeyRange kr = new KeyRange().setStart_token(scan_start_token).setEnd_token(scan_end_token);//.setCount(limit);
+                            KeyRange kr = new KeyRange().setStart_token(scan_start_token).setEnd_token(scan_end_token).setCount(limit+1000);
 
                             //For memory purposes we choose this way
                             results = new ArrayList<KeySlice>();
@@ -431,11 +431,16 @@ public class CassandraClient8 extends DB {
                                 System.out.println("(debug:) Strange size: "+result.size());
                             }
 
-                            if(token_index >= splits.size()){
+                            if(token_index == splits.size()){
 
+                                token_index++;
+
+                            }else if(token_index > splits.size()){
                                 finished = true;
 
-                            }else{
+
+                            }
+                            else{
 
                                 scan_start_token = scan_end_token;
                                 scan_end_token = splits.get(token_index);
@@ -676,10 +681,15 @@ public class CassandraClient8 extends DB {
            for(TokenRange trange : tr){
                System.out.print(trange.getStart_token());
                System.out.print(" - "+trange.getEnd_token());
+               boolean found =  false;
                for (EndpointDetails epd : trange.getEndpoint_details()){
                   if(epd.getDatacenter().equals("DC2")){
                       System.out.println(" : "+epd.getHost());
+                      found = true;
                   }
+               }
+               if(!found){
+                   System.out.println("Endpoint without DC2");
                }
 
                cli.client.set_keyspace("Eurotux");
