@@ -22,6 +22,9 @@ import com.yahoo.ycsb.*;
 import java.util.*;
 import java.nio.ByteBuffer;
 
+import org.apache.cassandra.config.ConfigurationException;
+import org.apache.cassandra.dht.IPartitioner;
+import org.apache.cassandra.utils.FBUtilities;
 import org.apache.thrift.TException;
 import org.apache.thrift.transport.TTransport;
 import org.apache.thrift.transport.TFramedTransport;
@@ -404,17 +407,19 @@ public class CassandraClient8 extends DB {
                             used_client.set_keyspace(table);
                         }
 
-                        List<String> splits =  used_client.describe_splits(column_family,start_token,end_token,limit);
+                       // List<String> splits =  used_client.describe_splits(column_family,start_token,end_token,limit);
 
-                        String scan_start_token = splits.get(0);
-                        String scan_end_token = splits.get(1);
-                        int token_index = 2;
+                    //    String scan_start_token = splits.get(0);
+                    //    String scan_end_token = splits.get(1);
+                    //    int token_index = 2;
 
                         boolean finished = false;
 
+                        IPartitioner partitioner = FBUtilities.newPartitioner(used_client.describe_partitioner());
+
                         while (!finished) {
 
-                            KeyRange kr = new KeyRange().setStart_token(scan_start_token).setEnd_token(scan_end_token).setCount(limit+1000);
+                            KeyRange kr = new KeyRange().setStart_token(start_token).setEnd_token(end_token).setCount(limit);
 
                             //For memory purposes we choose this way
                             results = new ArrayList<KeySlice>();
@@ -427,27 +432,28 @@ public class CassandraClient8 extends DB {
 
                             size += results.size();
 
-                            if(result.size()>limit){
-                                System.out.println("(debug:) Strange size: "+result.size());
-                            }
-
-                            if(token_index >= splits.size()){
+                            if(results.size()==0){
                                 finished = true;
-                                token_index++;
-
                             }
-// else if(token_index > splits.size()){
-//                                finished = true;
-//
-//
-//                          }
                             else{
-
-                                scan_start_token = scan_end_token;
-                                scan_end_token = splits.get(token_index);
-                                token_index++;
-
+                                KeySlice lastRow = temp_results.get(temp_results.size() - 1);
+                                ByteBuffer rowkey = lastRow.key;
+                                start_token = partitioner.getTokenFactory().toString(partitioner.getToken(rowkey));
+                                kr.setStart_token(start_token);
                             }
+
+//                            if(token_index >= splits.size()){
+//                                finished = true;
+//                                token_index++;
+//
+//                            }
+//                            else{
+//
+//                                scan_start_token = scan_end_token;
+//                                scan_end_token = splits.get(token_index);
+//                                token_index++;
+//
+//                            }
                         }
                     }
 
@@ -665,7 +671,8 @@ public class CassandraClient8 extends DB {
 
         //props.setProperty("hosts", args[0]);
         props.setProperty("hosts", "192.168.111.221");
-        
+        props.setProperty("cassandra.scan_connections", "192.168.111.224,192.168.111.228,192.168.111.232");
+
         cli.setProperties(props);
 
         try {
@@ -679,13 +686,23 @@ public class CassandraClient8 extends DB {
             
             
            List<TokenRange> tr = cli.client.describe_ring("Eurotux");
+
+            try {
+              IPartitioner partitioner = FBUtilities.newPartitioner(cli.client.describe_partitioner());
+            } catch (ConfigurationException e) {
+                e.printStackTrace();  //To change body of catch statement use File | Settings | File Templates.
+            }
+
+            int number_slices = 0;
            for(TokenRange trange : tr){
                System.out.print(trange.getStart_token());
                System.out.print(" - "+trange.getEnd_token());
                boolean found =  false;
+               String host = "";
                for (EndpointDetails epd : trange.getEndpoint_details()){
                   if(epd.getDatacenter().equals("DC2")){
                       System.out.println(" : "+epd.getHost());
+                      host = epd.getHost();
                       found = true;
                   }
                }
@@ -693,12 +710,15 @@ public class CassandraClient8 extends DB {
                    System.out.println("Endpoint without DC2");
                }
 
-               cli.client.set_keyspace("Eurotux");
-               List<String> splits =  cli.client.describe_splits("File_system",trange.getStart_token(),trange.getEnd_token(),2000);
-               System.out.println(splits.toString());
+               cli.scan_clients.get(host).set_keyspace("Eurotux");
 
+               List<String> splits =  cli.scan_clients.get(host).describe_splits("File_system", trange.getStart_token(), trange.getEnd_token(), 2000);
+               System.out.println(splits.toString());
+               number_slices+=splits.size()-1;
            }
-            
+
+            System.out.println("Number of splits: "+(number_slices));
+
         } catch (InvalidRequestException e) {
             e.printStackTrace();  //To change body of catch statement use File | Settings | File Templates.
         } catch (TException e) {
