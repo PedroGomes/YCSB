@@ -400,7 +400,7 @@ public class CassandraClient8 extends DB {
                             used_client.set_keyspace(table);
                         }
 
-                        KeyRange kr = new KeyRange().setStart_token(start_token).setEnd_token(end_token).setCount(limit);
+                        KeyRange kr = new KeyRange().setStart_key(start_token.getBytes()).setEnd_key(end_token.getBytes()).setCount(limit);
 
                         boolean finished = false;
 
