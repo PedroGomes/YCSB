@@ -340,9 +340,16 @@ public class CassandraClient8 extends DB {
     public int scan(String table, String startkey, int recordcount, Set<String> fields,
                     Vector<HashMap<String, ByteIterator>> result) {
 
-        Cassandra.Client used_client;
+        Cassandra.Client used_client = null;
         if(using_scan_connection){
-            used_client = scan_clients.get(random.nextInt(scan_clients.size()));
+            int selected = random.nextInt(scan_clients.size());
+            int i = 0;
+            for(String host : scan_clients.keySet())
+            {
+                if (i == selected)
+                    used_client = scan_clients.get(host);
+                i++;
+            }
         }else{
             used_client = client;
         }
