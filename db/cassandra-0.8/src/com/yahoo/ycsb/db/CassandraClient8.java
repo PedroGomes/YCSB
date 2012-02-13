@@ -354,8 +354,6 @@ public class CassandraClient8 extends DB {
             used_client = client;
         }
 
-
-
         for (int i = 0; i < OperationRetries; i++) {
 
             try {
@@ -395,8 +393,6 @@ public class CassandraClient8 extends DB {
                     
                     for(Pair<String,Pair<String, String>> endpoint_info : token_endpoints){
 
-
-
                         String endpoint_host =  endpoint_info.getLeft();
                         String start_token  = endpoint_info.getRight().getLeft();
                         String end_token = endpoint_info.getRight().getRight();
@@ -418,7 +414,7 @@ public class CassandraClient8 extends DB {
 
                         while (!finished) {
 
-                            KeyRange kr = new KeyRange().setStart_token(scan_start_token).setEnd_token(scan_end_token).setCount(limit);
+                            KeyRange kr = new KeyRange().setStart_token(scan_start_token).setEnd_token(scan_end_token);//.setCount(limit);
 
                             //For memory purposes we choose this way
                             results = new ArrayList<KeySlice>();
@@ -431,15 +427,15 @@ public class CassandraClient8 extends DB {
 
                             size += results.size();
 
+                            if(result.size()>limit){
+                                System.out.println("(debug:) Strange size: "+result.size());
+                            }
+
                             if(token_index >= splits.size()){
 
                                 finished = true;
 
                             }else{
-
-//                                if (temp_results.size() < limit && splits.size()>2) {
-//                                    System.out.println("(debug): Strange low result on range:"+temp_results.size());
-//                                }
 
                                 scan_start_token = scan_end_token;
                                 scan_end_token = splits.get(token_index);
@@ -688,11 +684,9 @@ public class CassandraClient8 extends DB {
 
                cli.client.set_keyspace("Eurotux");
                List<String> splits =  cli.client.describe_splits("File_system",trange.getStart_token(),trange.getEnd_token(),2000);
-
                System.out.println(splits.toString());
 
            }
-            
             
         } catch (InvalidRequestException e) {
             e.printStackTrace();  //To change body of catch statement use File | Settings | File Templates.
