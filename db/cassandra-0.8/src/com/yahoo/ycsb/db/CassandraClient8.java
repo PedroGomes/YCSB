@@ -77,8 +77,8 @@ public class CassandraClient8 extends DB {
 
     boolean using_scan_connection = false;
 
-    Map<String,TTransport> scan_cons_trp;
-    Map<String,Cassandra.Client> scan_clients;
+    Map<String, TTransport> scan_cons_trp;
+    Map<String, Cassandra.Client> scan_clients;
 
     public boolean tokenized_scans = false;
 
@@ -123,13 +123,13 @@ public class CassandraClient8 extends DB {
         String username = getProperties().getProperty(USERNAME_PROPERTY);
         String password = getProperties().getProperty(PASSWORD_PROPERTY);
 
-        row_buffer = Integer.parseInt(getProperties().getProperty(ROW_BUFFER_PROPERTY,"1000"));
+        row_buffer = Integer.parseInt(getProperties().getProperty(ROW_BUFFER_PROPERTY, "1000"));
 
         try {
 
-            read_ConsistencyLevel = getConsistencyLevel(getProperties().getProperty(READ_CONSISTENCY_PROPERTY,"QUORUM"));
-            write_ConsistencyLevel = getConsistencyLevel(getProperties().getProperty(WRITE_CONSISTENCY_PROPERTY,"QUORUM"));
-            scan_ConsistencyLevel = getConsistencyLevel(getProperties().getProperty(SCAN_CONSISTENCY_PROPERTY,"ONE"));
+            read_ConsistencyLevel = getConsistencyLevel(getProperties().getProperty(READ_CONSISTENCY_PROPERTY, "QUORUM"));
+            write_ConsistencyLevel = getConsistencyLevel(getProperties().getProperty(WRITE_CONSISTENCY_PROPERTY, "QUORUM"));
+            scan_ConsistencyLevel = getConsistencyLevel(getProperties().getProperty(SCAN_CONSISTENCY_PROPERTY, "ONE"));
         } catch (Exception e) {
             throw new DBException(e);
         }
@@ -149,20 +149,20 @@ public class CassandraClient8 extends DB {
         scan_clients = new TreeMap<String, Cassandra.Client>();
 
         String scan_hosts = getProperties().getProperty(SCAN_CONNECTIONS_PROPERTY);
-        if(scan_hosts!=null&&!scan_hosts.trim().isEmpty()){
-            using_scan_connection=true;
+        if (scan_hosts != null && !scan_hosts.trim().isEmpty()) {
+            using_scan_connection = true;
             allhosts = scan_hosts.split(",");
-            for(String cass_scan_host : allhosts){
+            for (String cass_scan_host : allhosts) {
                 client_connection = makeConnection(username, password, cass_scan_host);
-                scan_clients.put(cass_scan_host,client_connection.getLeft());
+                scan_clients.put(cass_scan_host, client_connection.getLeft());
                 scan_cons_trp.put(cass_scan_host, client_connection.getRight());
             }
-            
+
         }
 
         tokenized_scans = Boolean.parseBoolean(getProperties().getProperty(TOKENIZED_SCANS_PROPERTY, "false"));
 
-      //  System.out.println("(debug:) scan connection to "+myhost+" SCL: "+scan_ConsistencyLevel);
+        //  System.out.println("(debug:) scan connection to "+myhost+" SCL: "+scan_ConsistencyLevel);
 
     }
 
@@ -243,11 +243,12 @@ public class CassandraClient8 extends DB {
      */
     public void cleanup() throws DBException {
         tr.close();
-        if(using_scan_connection){
-            for(TTransport scan_con_trp :scan_cons_trp.values())
+        if (using_scan_connection) {
+            for (TTransport scan_con_trp : scan_cons_trp.values())
                 scan_con_trp.close();
         }
     }
+
     /**
      * Read a record from the database. Each field/value pair from the result will
      * be stored in a HashMap.
@@ -344,16 +345,15 @@ public class CassandraClient8 extends DB {
                     Vector<HashMap<String, ByteIterator>> result) {
 
         Cassandra.Client used_client = null;
-        if(using_scan_connection){
+        if (using_scan_connection) {
             int selected = random.nextInt(scan_clients.size());
             int i = 0;
-            for(String host : scan_clients.keySet())
-            {
+            for (String host : scan_clients.keySet()) {
                 if (i == selected)
                     used_client = scan_clients.get(host);
                 i++;
             }
-        }else{
+        } else {
             used_client = client;
         }
 
@@ -378,88 +378,57 @@ public class CassandraClient8 extends DB {
                 List<KeySlice> results = new ArrayList<KeySlice>();
                 int size = 0;
 
-                if(tokenized_scans){              
+                if (tokenized_scans) {
                     List<TokenRange> tr = used_client.describe_ring("Eurotux");
 
-                    List<Pair<String,Pair<String, String>>>  token_endpoints = new ArrayList<Pair<String, Pair<String, String>>>(tr.size());
-                  //  Map<String,Pair<String,String>> token_endpoints = new HashMap<String, Pair<String, String>>();
-                    
-                    for(TokenRange trange : tr){
-                        String start_token  = trange.getStart_token();
+                    Map<String, List<Pair<String, String>>> token_endpoints = new HashMap<String, List<Pair<String, String>>>();
+                    //  Map<String,Pair<String,String>> token_endpoints = new HashMap<String, Pair<String, String>>();
+
+                    for (TokenRange trange : tr) {
+                        String start_token = trange.getStart_token();
                         String end_token = trange.getEnd_token();
-                        for (EndpointDetails epd : trange.getEndpoint_details()){
-                            if(epd.getDatacenter().equals("DC2")){
-                               token_endpoints.add(new Pair<String, Pair<String, String>>(epd.getHost(), new Pair<String, String>(start_token, end_token)));
+                        for (EndpointDetails epd : trange.getEndpoint_details()) {
+                            if (epd.getDatacenter().equals("DC2")) {
+                                if (token_endpoints.containsKey(epd.getHost())) {
+                                    token_endpoints.get(epd.getHost()).add(new Pair<String, String>(start_token, end_token));
+                                } else {
+                                    List<Pair<String, String>> endpoints_slices = new ArrayList<Pair<String, String>>();
+                                    endpoints_slices.add(new Pair<String, String>(start_token, end_token));
+                                    token_endpoints.put(epd.getHost(), endpoints_slices);
+                                }
                             }
                         }
                     }
+
+                    List<Pair<Thread,Token_scan>> scan_threads = new LinkedList<Pair<Thread, Token_scan>>();
                     
-                    for(Pair<String,Pair<String, String>> endpoint_info : token_endpoints){
-
-                        String endpoint_host =  endpoint_info.getLeft();
-                        String start_token  = endpoint_info.getRight().getLeft();
-                        String end_token = endpoint_info.getRight().getRight();
-
-                        System.out.println("(debug:) scan using client "+endpoint_host);
+                    for (String endpoint_host : token_endpoints.keySet()) {
 
                         used_client = scan_clients.get(endpoint_host);
                         if (!_scan_table.equals(table)) {
                             used_client.set_keyspace(table);
                         }
 
-                       // List<String> splits =  used_client.describe_splits(column_family,start_token,end_token,limit);
+                        Token_scan  token_scan = new Token_scan(token_endpoints.get(endpoint_host),used_client,
+                                limit,predicate);
 
-                    //    String scan_start_token = splits.get(0);
-                    //    String scan_end_token = splits.get(1);
-                    //    int token_index = 2;
+                        Thread t  = new Thread(token_scan);
+                        t.start();
 
-                        boolean finished = false;
+                        scan_threads.add(new Pair<Thread, Token_scan>(t,token_scan));
 
-                        IPartitioner partitioner = FBUtilities.newPartitioner(used_client.describe_partitioner());
-
-                        while (!finished) {
-
-                            KeyRange kr = new KeyRange().setStart_token(start_token).setEnd_token(end_token).setCount(limit);
-
-                            //For memory purposes we choose this way
-                            results = new ArrayList<KeySlice>();
-
-                            List<KeySlice> temp_results = used_client.get_range_slices(parent, predicate, kr, scan_ConsistencyLevel);
-
-                            for (KeySlice keySlice : temp_results) {
-                                results.add(keySlice);
-                            }
-
-                            size += results.size();
-
-                            if(results.size()==0){
-                                finished = true;
-                            }
-                            else{
-                                KeySlice lastRow = temp_results.get(temp_results.size() - 1);
-                                ByteBuffer rowkey = lastRow.key;
-                                start_token = partitioner.getTokenFactory().toString(partitioner.getToken(rowkey));
-                                kr.setStart_token(start_token);
-                            }
-
-//                            if(token_index >= splits.size()){
-//                                finished = true;
-//                                token_index++;
-//
-//                            }
-//                            else{
-//
-//                                scan_start_token = scan_end_token;
-//                                scan_end_token = splits.get(token_index);
-//                                token_index++;
-//
-//                            }
-                        }
                     }
+
+                    for(Pair<Thread,Token_scan> scan_thread : scan_threads){
+                        scan_thread.left.join();
+                        size += scan_thread.right.retrieved_keys.size();
+                    }
+
+                    System.out.println("(debug) Tokenized scan size: " + size + "consitency " + scan_ConsistencyLevel.name());
 
                     _scan_table = table;
 
-                }else{
+                } else {
 
                     if (!_scan_table.equals(table)) {
                         used_client.set_keyspace(table);
@@ -490,10 +459,9 @@ public class CassandraClient8 extends DB {
                         size += results.size();
                     }
                 }
-                
-              
 
-                System.out.println("(debug) scan size: " + size +"consitency "+scan_ConsistencyLevel.name());
+
+                System.out.println("(debug) scan size: " + size + "consitency " + scan_ConsistencyLevel.name());
 
                 if (_debug) {
                     System.out.println("Scanning startkey: " + startkey);
@@ -537,6 +505,72 @@ public class CassandraClient8 extends DB {
         errorexception.printStackTrace(System.out);
         return Error;
     }
+
+    class Token_scan implements Runnable {
+
+        List<Pair<String, String>> endpoint_token_ranges;
+        Cassandra.Client scan_client;
+        int limit;
+        List<String> retrieved_keys = new ArrayList<String>();
+        SlicePredicate predicate;
+
+        Token_scan(List<Pair<String, String>> endpoint_token_ranges, Cassandra.Client scan_client, int limit, SlicePredicate predicate) {
+            this.endpoint_token_ranges = endpoint_token_ranges;
+            this.scan_client = scan_client;
+            this.limit = limit;
+            this.predicate = predicate;
+        }
+
+        @Override
+        public void run() {
+
+            boolean finished = false;
+            for (Pair<String, String> token_info : endpoint_token_ranges) {
+
+                String start_token = token_info.getLeft();
+                String end_token = token_info.getRight();
+
+                try {
+
+                    IPartitioner partitioner = null;
+                    partitioner = FBUtilities.newPartitioner(scan_client.describe_partitioner());
+
+                    while (!finished) {
+
+                        KeyRange kr = new KeyRange().setStart_token(start_token).setEnd_token(end_token).setCount(limit);
+
+                        List<KeySlice> temp_results = scan_client.get_range_slices(parent, predicate, kr, scan_ConsistencyLevel);
+
+                        int number_keys = 0;
+
+                        for (KeySlice keySlice : temp_results) {
+                            number_keys++;
+                            if (keySlice.getColumnsSize() > 0) {
+                                retrieved_keys.add(new String(keySlice.getKey()));
+                            }
+                        }
+
+                        if (number_keys == 0) {
+                            finished = true;
+                        } else {
+                            KeySlice lastRow = temp_results.get(temp_results.size() - 1);
+                            ByteBuffer rowkey = lastRow.key;
+                            start_token = partitioner.getTokenFactory().toString(partitioner.getToken(rowkey));
+                            kr.setStart_token(start_token);
+                        }
+
+                    }
+                } catch (Exception e) {
+                    e.printStackTrace();
+                }
+
+            }
+
+        }
+
+
+    }
+
 
     /**
      * Update a record in the database. Any field/value pairs in the specified
@@ -664,6 +698,7 @@ public class CassandraClient8 extends DB {
         return Error;
     }
 
+
     public static void main(String[] args) {
         CassandraClient8 cli = new CassandraClient8();
 
@@ -683,41 +718,41 @@ public class CassandraClient8 extends DB {
         }
 
         try {
-            
-            
-           List<TokenRange> tr = cli.client.describe_ring("Eurotux");
+
+
+            List<TokenRange> tr = cli.client.describe_ring("Eurotux");
 
             try {
-              IPartitioner partitioner = FBUtilities.newPartitioner(cli.client.describe_partitioner());
+                IPartitioner partitioner = FBUtilities.newPartitioner(cli.client.describe_partitioner());
             } catch (ConfigurationException e) {
                 e.printStackTrace();  //To change body of catch statement use File | Settings | File Templates.
             }
 
             int number_slices = 0;
-           for(TokenRange trange : tr){
-               System.out.print(trange.getStart_token());
-               System.out.print(" - "+trange.getEnd_token());
-               boolean found =  false;
-               String host = "";
-               for (EndpointDetails epd : trange.getEndpoint_details()){
-                  if(epd.getDatacenter().equals("DC2")){
-                      System.out.println(" : "+epd.getHost());
-                      host = epd.getHost();
-                      found = true;
-                  }
-               }
-               if(!found){
-                   System.out.println("Endpoint without DC2");
-               }
+            for (TokenRange trange : tr) {
+                System.out.print(trange.getStart_token());
+                System.out.print(" - " + trange.getEnd_token());
+                boolean found = false;
+                String host = "";
+                for (EndpointDetails epd : trange.getEndpoint_details()) {
+                    if (epd.getDatacenter().equals("DC2")) {
+                        System.out.println(" : " + epd.getHost());
+                        host = epd.getHost();
+                        found = true;
+                    }
+                }
+                if (!found) {
+                    System.out.println("Endpoint without DC2");
+                }
 
-               cli.scan_clients.get(host).set_keyspace("Eurotux");
+                cli.scan_clients.get(host).set_keyspace("Eurotux");
 
-               List<String> splits =  cli.scan_clients.get(host).describe_splits("File_system", trange.getStart_token(), trange.getEnd_token(), 2000);
-               System.out.println(splits.toString());
-               number_slices+=splits.size()-1;
-           }
+                List<String> splits = cli.scan_clients.get(host).describe_splits("File_system", trange.getStart_token(), trange.getEnd_token(), 2000);
+                System.out.println(splits.toString());
+                number_slices += splits.size() - 1;
+            }
 
-            System.out.println("Number of splits: "+(number_slices));
+            System.out.println("Number of splits: " + (number_slices));
 
         } catch (InvalidRequestException e) {
             e.printStackTrace();  //To change body of catch statement use File | Settings | File Templates.
