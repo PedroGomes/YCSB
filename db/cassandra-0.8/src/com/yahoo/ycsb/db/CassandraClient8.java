@@ -509,6 +509,8 @@ public class CassandraClient8 extends DB {
         List<Pair<String, String>> endpoint_token_ranges;
         Cassandra.Client scan_client;
         int limit;
+        int number_retrieved_keys = 0;
+        int number_empty_keys = 0;
         List<String> retrieved_keys = new ArrayList<String>();
         SlicePredicate predicate;
 
@@ -541,16 +543,24 @@ public class CassandraClient8 extends DB {
                         List<KeySlice> temp_results = scan_client.get_range_slices(parent, predicate, kr, scan_ConsistencyLevel);
 
                         int number_keys = 0;
+                        int empty_keys = 0;
 
                         for (KeySlice keySlice : temp_results) {
                             number_keys++;
                             if (keySlice.getColumnsSize() > 0) {
                                 retrieved_keys.add(new String(keySlice.getKey()));
                             }
+                            else {
+                                empty_keys++;
+                            }
                         }
+
+                        number_retrieved_keys += number_keys;
+                        number_empty_keys += empty_keys;
 
                         if (number_keys == 0) {
                             finished = true;
+                            
                         } else {
                             KeySlice lastRow = temp_results.get(temp_results.size() - 1);
                             ByteBuffer rowkey = lastRow.key;
@@ -565,7 +575,7 @@ public class CassandraClient8 extends DB {
 
             }
 
-            System.out.println("(debug:) Thread scan: "+retrieved_keys.size());
+            System.out.println("(debug:) Thread scan t: "+number_retrieved_keys+" e: "+number_empty_keys);
 
         }
 
