@@ -424,8 +424,6 @@ public class CassandraClient8 extends DB {
                         size += scan_thread.right.retrieved_keys.size();
                     }
 
-                    System.out.println("(debug) Tokenized scan size: " + size + "consitency " + scan_ConsistencyLevel.name());
-
                     _scan_table = table;
 
                 } else {
@@ -524,7 +522,6 @@ public class CassandraClient8 extends DB {
         @Override
         public void run() {
 
-            boolean finished = false;
             for (Pair<String, String> token_info : endpoint_token_ranges) {
 
                 String start_token = token_info.getLeft();
@@ -535,9 +532,11 @@ public class CassandraClient8 extends DB {
                     IPartitioner partitioner = null;
                     partitioner = FBUtilities.newPartitioner(scan_client.describe_partitioner());
 
-                    while (!finished) {
+                    boolean finished = false;
 
-                        KeyRange kr = new KeyRange().setStart_token(start_token).setEnd_token(end_token).setCount(limit);
+                    KeyRange kr = new KeyRange().setStart_token(start_token).setEnd_token(end_token).setCount(limit);
+
+                    while (!finished) {
 
                         List<KeySlice> temp_results = scan_client.get_range_slices(parent, predicate, kr, scan_ConsistencyLevel);
 
@@ -565,6 +564,8 @@ public class CassandraClient8 extends DB {
                 }
 
             }
+
+            System.out.println("(debug:) Thread scan: "+retrieved_keys.size());
 
         }
 
