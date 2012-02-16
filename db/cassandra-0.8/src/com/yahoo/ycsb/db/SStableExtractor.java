@@ -18,9 +18,7 @@ import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
-import java.util.concurrent.TimeUnit;
+import java.util.concurrent.*;
 
 /**
  * Class for data extraction from SStables
@@ -72,8 +70,8 @@ public class SStableExtractor {
         String[] sstables = gatherFile(folder);
         int size = 0;
 
-        ExecutorService exec = Executors.newFixedThreadPool(2);
-        List<ExportingThread> reader_threads = new ArrayList<ExportingThread>();
+        ExecutorService executor = Executors.newFixedThreadPool(2);
+        List<Future<Long>> reader_threads_results = new ArrayList<Future<Long>>();
 
         for (String sstable : sstables) {
             Descriptor descriptor = Descriptor.fromFilename(folder + "/" + sstable);
@@ -90,18 +88,23 @@ public class SStableExtractor {
             }
 
             ExportingThread exportingThread = new ExportingThread(SSTableReader.open(descriptor, metadata));
-            reader_threads.add(exportingThread);
-            exec.execute(exportingThread);
 
-            size += exportingThread.read_lines;
-        }
-        exec.awaitTermination(2, TimeUnit.HOURS);
+            Future<Long> submit = executor.submit(exportingThread);
+            reader_threads_results.add(submit);
 
-        for (int i = 0; i < reader_threads.size(); i++) {
-            ExportingThread exportingThread = reader_threads.get(i);
-            size += exportingThread.read_lines;
         }
 
+        for (Future<Long> future : reader_threads_results) {
+            try {
+                size += future.get();
+            } catch (InterruptedException e) {
+                e.printStackTrace();
+            } catch (ExecutionException e) {
+                e.printStackTrace();
+            }
+        }
+
+        executor.shutdown();
         return size;
     }
 
@@ -142,7 +145,7 @@ public class SStableExtractor {
 
 
     public static void main(String[] args) throws IOException {
-        String usage = String.format("Usage: %s -o <outfile> -i <sstable_folder> %n",
+        String usage = String.format("Usage: %s -o <outfile> <sstable_folder> %n",
                 SStableExtractor.class.getName());
 
         CommandLineParser parser = new PosixParser();
@@ -169,14 +172,13 @@ public class SStableExtractor {
             System.err.println(msg);
         }
 
-
         try {
 
-            long t1 = System.currentTimeMillis();
+            long ti = System.currentTimeMillis();
             int number_read_lines = export(cmd.getArgs()[0], outFile);
-            long t2 = System.currentTimeMillis();
+            long tf = System.currentTimeMillis();
 
-            System.out.println("Number of read lines: " + number_read_lines + " in " + ((t2 - t1) / 1000) + "s ( " + ((t2 - t1) / 60000) + "m )");
+            System.out.println("Number of read lines: " + number_read_lines + " in " + ((tf - ti) / 1000) + "s (" + ((tf - ti) / 60000) + "m)");
 
         } catch (Exception e) {
             e.printStackTrace();
@@ -187,17 +189,18 @@ public class SStableExtractor {
     }
 }
 
-class ExportingThread implements Runnable {
+class ExportingThread implements Callable<Long> {
 
     SSTableReader reader;
-    int read_lines = 0;
 
     ExportingThread(SSTableReader reader) {
         this.reader = reader;
     }
 
     @Override
-    public void run() {
+    public Long call() {
+
+        long read_lines = 0;
 
         SSTableIdentityIterator row;
         SSTableScanner scanner = reader.getDirectScanner();
@@ -220,5 +223,6 @@ class ExportingThread implements Runnable {
         } catch (IOException e) {
             e.printStackTrace();
         }
+        return read_lines;
     }
 }
