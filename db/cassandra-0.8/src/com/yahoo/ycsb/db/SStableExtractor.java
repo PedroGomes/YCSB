@@ -1,8 +1,6 @@
 package com.yahoo.ycsb.db;
 
-import org.apache.cassandra.config.CFMetaData;
-import org.apache.cassandra.config.ColumnDefinition;
-import org.apache.cassandra.config.Schema;
+import org.apache.cassandra.config.*;
 import org.apache.cassandra.db.index.keys.KeysIndex;
 import org.apache.cassandra.io.sstable.Descriptor;
 import org.apache.cassandra.io.sstable.SSTableIdentityIterator;
@@ -126,6 +124,7 @@ public class SStableExtractor {
     }
 
 
+
     public static void main(String[] args) throws IOException
     {
         String usage = String.format("Usage: %s -o <outfile> -i <sstable_folder> %n",
@@ -151,6 +150,14 @@ public class SStableExtractor {
             System.err.println(usage);
             System.exit(1);
         }
+
+        DatabaseDescriptor.loadSchemas();
+        if (Schema.instance.getNonSystemTables().size() < 1)
+        {
+            String msg = "no non-system tables are defined";
+            System.err.println(msg);
+        }
+
 
 
         try {
