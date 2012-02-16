@@ -7,17 +7,23 @@ import org.apache.cassandra.io.sstable.SSTableIdentityIterator;
 import org.apache.cassandra.io.sstable.SSTableReader;
 import org.apache.cassandra.io.sstable.SSTableScanner;
 import org.apache.commons.cli.*;
+
 import static org.apache.cassandra.utils.ByteBufferUtil.bytesToHex;
 import static org.apache.cassandra.utils.ByteBufferUtil.hexToBytes;
 
 import java.io.File;
 import java.io.FilenameFilter;
 import java.io.IOException;
+import java.util.ArrayList;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Set;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 
 /**
-* Class for data extraction from SStables
+ * Class for data extraction from SStables
  */
 public class SStableExtractor {
 
@@ -27,8 +33,7 @@ public class SStableExtractor {
     private static Options options;
     private static CommandLine cmd;
 
-    static
-    {
+    static {
         options = new Options();
         Option optOutfile = new Option(OUTFILE_OPTION, true, "output file");
         optOutfile.setRequired(false);
@@ -36,62 +41,74 @@ public class SStableExtractor {
 
     }
 
-    public static  String[] gatherFile(String folder) throws Exception{
+    public static String[] gatherFile(String folder) throws Exception {
 
         System.out.println("Selected folder:" + folder);
         File table_folder = new File(folder);
-        if(!table_folder.exists()){
+        if (!table_folder.exists()) {
             throw new Exception("Folder does not exist");
         }
-        if(!table_folder.isDirectory())
-        {
+        if (!table_folder.isDirectory()) {
             throw new Exception("The path does not correspond to a folder");
         }
         FilenameFilter filenameFilter = new FilenameFilter() {
             @Override
             public boolean accept(File dir, String name) {
-                return name.trim().endsWith("-Data.db"); 
+                return name.trim().endsWith("-Data.db");
             }
         };
 
         String[] sstables = table_folder.list(filenameFilter);
 
-        if(sstables.length==0){
+        if (sstables.length == 0) {
             throw new Exception("No SStables in the selected folder");
         }
 
         return sstables;
-    }   
+    }
 
 
     public static int export(String folder, String outfile) throws Exception {
         String[] sstables = gatherFile(folder);
         int size = 0;
-        for( String sstable : sstables ){
-            Descriptor descriptor = Descriptor.fromFilename(folder+"/"+sstable);
+
+        ExecutorService exec = Executors.newFixedThreadPool(2);
+        List<ExportingThread> reader_threads = new ArrayList<ExportingThread>();
+
+        for (String sstable : sstables) {
+            Descriptor descriptor = Descriptor.fromFilename(folder + "/" + sstable);
             CFMetaData metadata;
-            if (descriptor.cfname.contains("."))
-            {
+            if (descriptor.cfname.contains(".")) {
                 // look up index metadata from parent
                 int i = descriptor.cfname.indexOf(".");
                 String parentName = descriptor.cfname.substring(0, i);
                 CFMetaData parent = Schema.instance.getCFMetaData(descriptor.ksname, parentName);
                 ColumnDefinition def = parent.getColumnDefinitionForIndex(descriptor.cfname.substring(i + 1));
                 metadata = CFMetaData.newIndexMetadata(parent, def, KeysIndex.indexComparator());
-            }
-            else
-            {
+            } else {
                 metadata = Schema.instance.getCFMetaData(descriptor.ksname, descriptor.cfname);
             }
-            size += export(SSTableReader.open(descriptor, metadata));
+
+            ExportingThread exportingThread = new ExportingThread(SSTableReader.open(descriptor, metadata));
+            reader_threads.add(exportingThread);
+            exec.execute(exportingThread);
+
+            size += exportingThread.read_lines;
         }
-       return size;
+        exec.awaitTermination(2, TimeUnit.HOURS);
+
+        for (int i = 0; i < reader_threads.size(); i++) {
+            ExportingThread exportingThread = reader_threads.get(i);
+            size += exportingThread.read_lines;
+        }
+
+        return size;
     }
+
 
     // This is necessary to accommodate the test suite since you cannot open a Reader more
     // than once from within the same process.
-    static int export(SSTableReader reader) throws IOException
-    {
+    static int export(SSTableReader reader) throws IOException {
         Set<String> excludeSet = new HashSet<String>();
 
         SSTableIdentityIterator row;
@@ -102,8 +119,7 @@ public class SStableExtractor {
         int i = 0;
 
         // collecting keys to export
-        while (scanner.hasNext())
-        {
+        while (scanner.hasNext()) {
             row = (SSTableIdentityIterator) scanner.next();
 
             String currentKey = bytesToHex(row.getKey().key);
@@ -111,11 +127,11 @@ public class SStableExtractor {
             //System.out.println(currentKey);
             if (excludeSet.contains(currentKey))
                 continue;
-            else if (i != 0){
+            else if (i != 0) {
                 //outs.println(",");
             }
 
-          //  serializeRow(row, row.getKey(), outs);
+            //  serializeRow(row, row.getKey(), outs);
 
             i++;
         }
@@ -125,18 +141,14 @@ public class SStableExtractor {
     }
 
 
-
-    public static void main(String[] args) throws IOException
-    {
+    public static void main(String[] args) throws IOException {
         String usage = String.format("Usage: %s -o <outfile> -i <sstable_folder> %n",
                 SStableExtractor.class.getName());
 
         CommandLineParser parser = new PosixParser();
-        try
-        {
+        try {
             cmd = parser.parse(options, args);
-        } catch (ParseException e1)
-        {
+        } catch (ParseException e1) {
             System.err.println(e1.getMessage());
             System.err.println(usage);
             System.exit(1);
@@ -145,30 +157,27 @@ public class SStableExtractor {
         String outFile = cmd.getOptionValue(OUTFILE_OPTION);
 
 
-        if (cmd.getArgs().length != 1)
-        {
+        if (cmd.getArgs().length != 1) {
             System.err.println("You must supply exactly one sstable folder");
             System.err.println(usage);
             System.exit(1);
         }
 
         DatabaseDescriptor.loadSchemas();
-        if (Schema.instance.getNonSystemTables().size() < 1)
-        {
+        if (Schema.instance.getNonSystemTables().size() < 1) {
             String msg = "no non-system tables are defined";
             System.err.println(msg);
         }
 
 
-
         try {
 
-            long t1  = System.currentTimeMillis();
+            long t1 = System.currentTimeMillis();
             int number_read_lines = export(cmd.getArgs()[0], outFile);
             long t2 = System.currentTimeMillis();
 
-            System.out.println("Number of read lines: "+number_read_lines + " in "+((t2-t1)/1000)+"s ( "+((t2-t1)/60000)+"m )");
-            
+            System.out.println("Number of read lines: " + number_read_lines + " in " + ((t2 - t1) / 1000) + "s ( " + ((t2 - t1) / 60000) + "m )");
+
         } catch (Exception e) {
             e.printStackTrace();
             System.exit(0);
@@ -176,6 +185,40 @@ public class SStableExtractor {
 
         System.exit(0);
     }
+}
 
+class ExportingThread implements Runnable {
 
+    SSTableReader reader;
+    int read_lines = 0;
+
+    ExportingThread(SSTableReader reader) {
+        this.reader = reader;
+    }
+
+    @Override
+    public void run() {
+
+        SSTableIdentityIterator row;
+        SSTableScanner scanner = reader.getDirectScanner();
+
+//        outs.println("{");
+
+        // collecting keys to export
+        while (scanner.hasNext()) {
+            row = (SSTableIdentityIterator) scanner.next();
+
+            String currentKey = bytesToHex(row.getKey().key);
+
+            //System.out.println(currentKey);
+
+            read_lines++;
+        }
+
+        try {
+            scanner.close();
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+    }
 }
