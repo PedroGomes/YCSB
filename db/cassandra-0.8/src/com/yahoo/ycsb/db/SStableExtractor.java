@@ -64,7 +64,7 @@ public class SStableExtractor {
     }   
 
 
-    public static void export(String folder, String outfile) throws Exception {
+    public static int export(String folder, String outfile) throws Exception {
         String[] sstables = gatherFile(folder);
         int size = 0;
         for( String sstable : sstables ){
@@ -85,7 +85,7 @@ public class SStableExtractor {
             }
             size += export(SSTableReader.open(descriptor, metadata));
         }
-        System.out.println("Total read: "+size);
+       return size;
     }
 
     // This is necessary to accommodate the test suite since you cannot open a Reader more
@@ -111,8 +111,9 @@ public class SStableExtractor {
             //System.out.println(currentKey);
             if (excludeSet.contains(currentKey))
                 continue;
-            else if (i != 0)
+            else if (i != 0){
                 //outs.println(",");
+            }
 
           //  serializeRow(row, row.getKey(), outs);
 
@@ -161,7 +162,13 @@ public class SStableExtractor {
 
 
         try {
-            export(cmd.getArgs()[0], outFile);
+
+            long t1  = System.currentTimeMillis();
+            int number_read_lines = export(cmd.getArgs()[0], outFile);
+            long t2 = System.currentTimeMillis();
+
+            System.out.println("Number of read lines: "+number_read_lines + " in "+((t2-t1)/1000)+"s ( "+((t2-t1)/60000)+"m )");
+            
         } catch (Exception e) {
             e.printStackTrace();
             System.exit(0);
