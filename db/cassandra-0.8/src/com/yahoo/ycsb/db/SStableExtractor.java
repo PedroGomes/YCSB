@@ -9,11 +9,13 @@ import org.apache.cassandra.io.sstable.SSTableScanner;
 import org.apache.commons.cli.*;
 
 import static org.apache.cassandra.utils.ByteBufferUtil.bytesToHex;
-import static org.apache.cassandra.utils.ByteBufferUtil.hexToBytes;
+import static org.apache.cassandra.utils.ByteBufferUtil.string;
+
 
 import java.io.File;
 import java.io.FilenameFilter;
 import java.io.IOException;
+import java.nio.charset.CharacterCodingException;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
@@ -212,8 +214,14 @@ class ExportingThread implements Callable<Long> {
             row = (SSTableIdentityIterator) scanner.next();
 
             String currentKey = bytesToHex(row.getKey().key);
+            String other_key = null;
+            try {
+                other_key = string(row.getKey().key);
+            } catch (CharacterCodingException e) {
+                e.printStackTrace();
+            }
 
-            //System.out.println(currentKey);
+            System.out.println(currentKey + " -|- " + other_key);
 
             read_lines++;
         }
