@@ -223,14 +223,15 @@ class ExportingThread implements Callable<Long> {
             } catch (CharacterCodingException e) {
                 e.printStackTrace();
             }
+            if (key != null) {
 
-            String exists = redis_client.get(key);
-            if(exists ==null){
-                 redis_client.set(key,"exists");
-            }
-            else{
-                System.out.println("Keys exists: "+key);
+                String exists = redis_client.get(key);
+                if (exists == null) {
+                    redis_client.set(key, "exists");
+                } else {
+                    System.out.println("Keys exists: " + key);
 
+                }
             }
 
             read_lines++;

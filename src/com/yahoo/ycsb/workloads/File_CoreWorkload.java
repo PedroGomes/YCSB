@@ -568,8 +568,7 @@ public class File_CoreWorkload extends Workload {
             String[] connection_info = redis_connection_info.split(":");
             String host = connection_info[0];
             String port = connection_info[1];
-            redis_client = new Jedis("192.168.111.220", 6379);
-                    //new Jedis(host,Integer.parseInt(port));
+            redis_client = new Jedis(host,Integer.parseInt(port));
         }
 
              
