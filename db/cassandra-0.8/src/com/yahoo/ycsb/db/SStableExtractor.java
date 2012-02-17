@@ -32,6 +32,7 @@ import java.util.concurrent.*;
  */
 public class SStableExtractor {
 
+    private static final int NUMBER_THREADS = 1;
     private static final String OUTFILE_OPTION = "o";
     private static final String INFILE_OPTION = "i";
     private static final String KEY_OPTION = "k";
@@ -78,7 +79,7 @@ public class SStableExtractor {
         System.out.println(Arrays.toString(sstables));
         int size = 0;
 
-        ExecutorService executor = Executors.newFixedThreadPool(2);
+        ExecutorService executor = Executors.newFixedThreadPool(NUMBER_THREADS);
         List<Future<Long>> reader_threads_results = new ArrayList<Future<Long>>();
 
         for (String sstable : sstables) {
