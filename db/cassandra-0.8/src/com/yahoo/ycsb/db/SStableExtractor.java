@@ -231,13 +231,13 @@ class ExportingThread implements Callable<Long> {
              //   key = row.getPath();
             }
             if (key != null) {
-                if (!retrieved_rows.containsKey(key)) {
-                    retrieved_rows.put(key, row);
-                } else {
-                    System.out.println(key +" : "+serialize_row(row) + "-|-" + serialize_row(retrieved_rows.get(key)));
-                }
+//                if (!retrieved_rows.containsKey(key)) {
+//                    retrieved_rows.put(key, row);
+//                } else {
+//                    System.out.println(key +" : "+serialize_row(row) + "-|-" + serialize_row(retrieved_rows.get(key)));
+//                }
+                read_lines++;
             }
-            read_lines++;
         }
 
         try {
