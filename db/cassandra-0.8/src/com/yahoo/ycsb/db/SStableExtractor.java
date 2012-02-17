@@ -1,11 +1,17 @@
 package com.yahoo.ycsb.db;
 
 import org.apache.cassandra.config.*;
+import org.apache.cassandra.db.ColumnFamily;
+import org.apache.cassandra.db.DeletedColumn;
+import org.apache.cassandra.db.ExpiringColumn;
+import org.apache.cassandra.db.IColumn;
 import org.apache.cassandra.db.index.keys.KeysIndex;
+import org.apache.cassandra.db.marshal.AbstractType;
 import org.apache.cassandra.io.sstable.Descriptor;
 import org.apache.cassandra.io.sstable.SSTableIdentityIterator;
 import org.apache.cassandra.io.sstable.SSTableReader;
 import org.apache.cassandra.io.sstable.SSTableScanner;
+import org.apache.cassandra.utils.ByteBufferUtil;
 import org.apache.commons.cli.*;
 import redis.clients.jedis.Jedis;
 
@@ -16,11 +22,9 @@ import static org.apache.cassandra.utils.ByteBufferUtil.string;
 import java.io.File;
 import java.io.FilenameFilter;
 import java.io.IOException;
+import java.nio.ByteBuffer;
 import java.nio.charset.CharacterCodingException;
-import java.util.ArrayList;
-import java.util.HashSet;
-import java.util.List;
-import java.util.Set;
+import java.util.*;
 import java.util.concurrent.*;
 
 /**
@@ -195,7 +199,8 @@ public class SStableExtractor {
 class ExportingThread implements Callable<Long> {
 
     SSTableReader reader;
-    Jedis redis_client;
+    //Jedis redis_client;
+    TreeMap<String, SSTableIdentityIterator> retrieved_rows;
 
     ExportingThread(SSTableReader reader) {
         this.reader = reader;
@@ -204,36 +209,33 @@ class ExportingThread implements Callable<Long> {
     @Override
     public Long call() {
 
-        redis_client = new Jedis("192.168.111.220", 6379);
+        retrieved_rows = new TreeMap<String, SSTableIdentityIterator>();
+        //    redis_client = new Jedis("192.168.111.220", 6379);
 
         long read_lines = 0;
 
-        SSTableIdentityIterator row;
+
         SSTableScanner scanner = reader.getDirectScanner();
 
 //        outs.println("{");
 
         // collecting keys to export
         while (scanner.hasNext()) {
-            row = (SSTableIdentityIterator) scanner.next();
+            SSTableIdentityIterator row = (SSTableIdentityIterator) scanner.next();
 
             String key = null;
             try {
                 key = string(row.getKey().key);
             } catch (CharacterCodingException e) {
-                e.printStackTrace();
+                key = row.getPath();
             }
             if (key != null) {
-
-                String exists = redis_client.get(key);
-                if (exists == null) {
-                    redis_client.set(key, "exists");
+                if (!retrieved_rows.containsKey(key)) {
+                    retrieved_rows.put(key, row);
                 } else {
-                    System.out.println("Keys exists: " + key);
-
+                    System.out.println(serialize_row(row) + "-|-" + serialize_row(retrieved_rows.get(key)));
                 }
             }
-
             read_lines++;
         }
 
@@ -244,4 +246,50 @@ class ExportingThread implements Callable<Long> {
         }
         return read_lines;
     }
+
+    private static String serialize_row(SSTableIdentityIterator row) {
+
+        ColumnFamily columnFamily = row.getColumnFamily();
+        CFMetaData cfMetaData = columnFamily.metadata();
+        AbstractType comparator = columnFamily.getComparator();
+        StringBuffer stringBuffer = new StringBuffer("{");
+
+        while (row.hasNext()) {
+            IColumn column = row.next();
+            List<Object> columns = serializeColumn(column, comparator, cfMetaData);
+            stringBuffer.append(columns.toString());
+            stringBuffer.append("||");
+        }
+        stringBuffer.append("}");
+
+        return stringBuffer.toString();
+    }
+
+
+    private static List<Object> serializeColumn(IColumn column, AbstractType comparator, CFMetaData cfMetaData) {
+
+        ArrayList<Object> serializedColumn = new ArrayList<Object>();
+
+        ByteBuffer name = ByteBufferUtil.clone(column.name());
+        ByteBuffer value = ByteBufferUtil.clone(column.value());
+
+        serializedColumn.add(comparator.getString(name));
+        if (column instanceof DeletedColumn) {
+            serializedColumn.add(ByteBufferUtil.bytesToHex(value));
+        } else {
+            AbstractType validator = cfMetaData.getValueValidator(name);
+            serializedColumn.add(validator.getString(value));
+        }
+        serializedColumn.add(column.timestamp());
+
+        if (column instanceof DeletedColumn) {
+            serializedColumn.add("d");
+        } else if (column instanceof ExpiringColumn) {
+            serializedColumn.add("e");
+            serializedColumn.add(((ExpiringColumn) column).getTimeToLive());
+            serializedColumn.add(column.getLocalDeletionTime());
+        }
+        return serializedColumn;
+    }
+
 }
