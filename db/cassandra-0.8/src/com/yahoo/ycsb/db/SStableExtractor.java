@@ -75,6 +75,7 @@ public class SStableExtractor {
 
     public static int export(String folder, String outfile) throws Exception {
         String[] sstables = gatherFile(folder);
+        System.out.println(Arrays.toString(sstables));
         int size = 0;
 
         ExecutorService executor = Executors.newFixedThreadPool(2);
@@ -233,7 +234,7 @@ class ExportingThread implements Callable<Long> {
                 if (!retrieved_rows.containsKey(key)) {
                     retrieved_rows.put(key, row);
                 } else {
-                    System.out.println(serialize_row(row) + "-|-" + serialize_row(retrieved_rows.get(key)));
+                    System.out.println(key +" : "+serialize_row(row) + "-|-" + serialize_row(retrieved_rows.get(key)));
                 }
             }
             read_lines++;
