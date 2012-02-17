@@ -7,6 +7,7 @@ import org.apache.cassandra.io.sstable.SSTableIdentityIterator;
 import org.apache.cassandra.io.sstable.SSTableReader;
 import org.apache.cassandra.io.sstable.SSTableScanner;
 import org.apache.commons.cli.*;
+import redis.clients.jedis.Jedis;
 
 import static org.apache.cassandra.utils.ByteBufferUtil.bytesToHex;
 import static org.apache.cassandra.utils.ByteBufferUtil.string;
@@ -194,6 +195,7 @@ public class SStableExtractor {
 class ExportingThread implements Callable<Long> {
 
     SSTableReader reader;
+    Jedis redis_client;
 
     ExportingThread(SSTableReader reader) {
         this.reader = reader;
@@ -201,6 +203,8 @@ class ExportingThread implements Callable<Long> {
 
     @Override
     public Long call() {
+
+        redis_client = new Jedis("192.168.111.220", 6379);
 
         long read_lines = 0;
 
@@ -213,15 +217,21 @@ class ExportingThread implements Callable<Long> {
         while (scanner.hasNext()) {
             row = (SSTableIdentityIterator) scanner.next();
 
-            String currentKey = bytesToHex(row.getKey().key);
-            String other_key = null;
+            String key = null;
             try {
-                other_key = string(row.getKey().key);
+                key = string(row.getKey().key);
             } catch (CharacterCodingException e) {
                 e.printStackTrace();
             }
 
-            System.out.println(currentKey + " -|- " + other_key);
+            String exists = redis_client.get(key);
+            if(exists ==null){
+                 redis_client.set(key,"exists");
+            }
+            else{
+                System.out.println("Keys exists: "+key);
+
+            }
 
             read_lines++;
         }
