@@ -274,12 +274,12 @@ class ExportingThread implements Callable<Long> {
         ByteBuffer value = ByteBufferUtil.clone(column.value());
 
         serializedColumn.add(comparator.getString(name));
-        if (column instanceof DeletedColumn) {
-            serializedColumn.add(ByteBufferUtil.bytesToHex(value));
-        } else {
-            AbstractType validator = cfMetaData.getValueValidator(name);
-            serializedColumn.add(validator.getString(value));
-        }
+//        if (column instanceof DeletedColumn) {
+//            serializedColumn.add(ByteBufferUtil.bytesToHex(value));
+//        } else {
+//            AbstractType validator = cfMetaData.getValueValidator(name);
+//            serializedColumn.add(validator.getString(value));
+//        }
         serializedColumn.add(column.timestamp());
 
         if (column instanceof DeletedColumn) {
