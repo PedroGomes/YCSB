@@ -228,7 +228,7 @@ class ExportingThread implements Callable<Long> {
             try {
                 key = string(row.getKey().key);
             } catch (CharacterCodingException e) {
-                key = row.getPath();
+             //   key = row.getPath();
             }
             if (key != null) {
                 if (!retrieved_rows.containsKey(key)) {
