@@ -13,7 +13,7 @@ import org.apache.cassandra.io.sstable.SSTableReader;
 import org.apache.cassandra.io.sstable.SSTableScanner;
 import org.apache.cassandra.utils.ByteBufferUtil;
 import org.apache.commons.cli.*;
-import redis.clients.jedis.Jedis;
+//import redis.clients.jedis.Jedis;
 
 import static org.apache.cassandra.utils.ByteBufferUtil.bytesToHex;
 import static org.apache.cassandra.utils.ByteBufferUtil.string;
