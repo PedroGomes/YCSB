@@ -19,6 +19,7 @@ package com.yahoo.ycsb.db;
 
 import com.yahoo.ycsb.*;
 
+import java.io.*;
 import java.util.*;
 import java.nio.ByteBuffer;
 
@@ -71,6 +72,9 @@ public class CassandraClient8 extends DB {
 
     public static final String TOKENIZED_SCANS_PROPERTY = "cassandra.tokenized_scans";
 
+    public static final String DEBUG_FOLDER_PROPERTY = "cassandra.debug_folder";
+
+    String debug_folder;
 
     TTransport tr;
     Cassandra.Client client;
@@ -162,6 +166,7 @@ public class CassandraClient8 extends DB {
 
         tokenized_scans = Boolean.parseBoolean(getProperties().getProperty(TOKENIZED_SCANS_PROPERTY, "false"));
 
+        debug_folder = getProperties().getProperty(DEBUG_FOLDER_PROPERTY);
         //  System.out.println("(debug:) scan connection to "+myhost+" SCL: "+scan_ConsistencyLevel);
 
     }
@@ -400,8 +405,8 @@ public class CassandraClient8 extends DB {
                         }
                     }
 
-                    List<Pair<Thread,Token_scan>> scan_threads = new LinkedList<Pair<Thread, Token_scan>>();
-                    
+                    List<Pair<Thread, Token_scan>> scan_threads = new LinkedList<Pair<Thread, Token_scan>>();
+
                     for (String endpoint_host : token_endpoints.keySet()) {
 
                         used_client = scan_clients.get(endpoint_host);
@@ -409,17 +414,17 @@ public class CassandraClient8 extends DB {
                             used_client.set_keyspace(table);
                         }
 
-                        Token_scan  token_scan = new Token_scan(token_endpoints.get(endpoint_host),used_client,
-                                limit,predicate);
+                        Token_scan token_scan = new Token_scan(token_endpoints.get(endpoint_host), used_client,
+                                limit, predicate);
 
-                        Thread t  = new Thread(token_scan);
+                        Thread t = new Thread(token_scan);
                         t.start();
 
-                        scan_threads.add(new Pair<Thread, Token_scan>(t,token_scan));
+                        scan_threads.add(new Pair<Thread, Token_scan>(t, token_scan));
 
                     }
 
-                    for(Pair<Thread,Token_scan> scan_thread : scan_threads){
+                    for (Pair<Thread, Token_scan> scan_thread : scan_threads) {
                         scan_thread.left.join();
                         size += scan_thread.right.retrieved_keys.size();
                     }
@@ -454,6 +459,9 @@ public class CassandraClient8 extends DB {
                         for (KeySlice keySlice : temp_results) {
                             results.add(keySlice);
                         }
+
+                        preform_debug_creation(temp_results);
+
                         size += results.size();
                     }
                 }
@@ -547,10 +555,10 @@ public class CassandraClient8 extends DB {
 
                         for (KeySlice keySlice : temp_results) {
                             number_keys++;
+
                             if (keySlice.getColumnsSize() > 0) {
                                 retrieved_keys.add(new String(keySlice.getKey()));
-                            }
-                            else {
+                            } else {
                                 empty_keys++;
                             }
                         }
@@ -560,13 +568,15 @@ public class CassandraClient8 extends DB {
 
                         if (number_keys == 0) {
                             finished = true;
-                            
+
                         } else {
                             KeySlice lastRow = temp_results.get(temp_results.size() - 1);
                             ByteBuffer rowkey = lastRow.key;
                             start_token = partitioner.getTokenFactory().toString(partitioner.getToken(rowkey));
                             kr.setStart_token(start_token);
                         }
+
+                        preform_debug_creation(temp_results);
 
                     }
                 } catch (Exception e) {
@@ -575,13 +585,94 @@ public class CassandraClient8 extends DB {
 
             }
 
-            System.out.println("(debug:) Thread scan t: "+number_retrieved_keys+" e: "+number_empty_keys);
+            System.out.println("(debug:) Thread scan t: " + number_retrieved_keys + " e: " + number_empty_keys);
+
+        }
+    }
+
+    public void preform_debug_creation(List<KeySlice> keySlices) {
+
+        if (debug_folder == null) {
+            return;
+        }
+
+        for (KeySlice keySlice : keySlices) {
+            String key = new String(keySlice.getKey());
+            if (keySlice.getColumnsSize() == 1) {
+                Column column = keySlice.getColumns().get(0).getColumn();
+                String column_name = new String(column.getName());
+                if (column_name.equals("_file")) { //single column mode
+
+                    createFolders(key, true);
+                    File file = new File(key);
+                    if(!file.exists()){
+                        createFile(key,column.getValue());
+                    }else{
+                        System.out.println("Warn: File already exists");
+                    }
+
+                } else { //folder with one column
+                    String folder = createFolders(key, false);
+                    createFile(folder+"/"+column_name,column.getValue());
+
+                }
+            } else {
+                String folder = createFolders(key, false);
+                for(ColumnOrSuperColumn columnOrSuperColumn :keySlice.getColumns()){
+                    Column column = columnOrSuperColumn.getColumn();
+                    String column_name = new String(column.getName());
+                    createFile(folder+"/"+column_name,column.getValue());
+                }
+            }
+        }
+    }
+
+    private String createFolders(String path, boolean ends_with_file) {
+       
+        String[] folders = path.split("/");
+        String base_folder = debug_folder;
+        if(!base_folder.endsWith("/")){
+            base_folder =  base_folder+"/";
+        }
+
+        int folder_length = folders.length;
+        folder_length = ends_with_file ?  folder_length -1 : folder_length;
+
+        for (int i = 0; i < folder_length; i++) {
+            String folder = folders[i];
+            base_folder+="/"+folder;
+        }
+        
+        File new_folders = new File(base_folder);
+        if(!new_folders.exists()){
+            new_folders.mkdirs();
+        }
+
+        return base_folder;
+    }
+
+    
+    public void createFile(String path,byte[] value)  {
+        OutputStream out = null;
+        try {
+            out = new FileOutputStream(path);
+        } catch (FileNotFoundException e) {
+            e.printStackTrace();
+        }
+        try{
+            out.write(value);
+        } catch (IOException e) {
+            e.printStackTrace();
+        } finally {
+            try {
+                out.close();
+            } catch (IOException e) {
+                e.printStackTrace();
+            }
 
         }
 
-
     }
-
 
     /**
      * Update a record in the database. Any field/value pairs in the specified
@@ -711,65 +802,71 @@ public class CassandraClient8 extends DB {
 
 
     public static void main(String[] args) {
+        
+        String base_folder = "/Users/pedrogomes/Desktop/Work/eurotux/test_folder_creation";
+
+
         CassandraClient8 cli = new CassandraClient8();
-
-        Properties props = new Properties();
-
-        //props.setProperty("hosts", args[0]);
-        props.setProperty("hosts", "192.168.111.221");
-        props.setProperty("cassandra.scan_connections", "192.168.111.224,192.168.111.228,192.168.111.232");
-
-        cli.setProperties(props);
-
-        try {
-            cli.init();
-        } catch (Exception e) {
-            e.printStackTrace();
-            System.exit(0);
-        }
-
-        try {
-
-
-            List<TokenRange> tr = cli.client.describe_ring("Eurotux");
-
-            try {
-                IPartitioner partitioner = FBUtilities.newPartitioner(cli.client.describe_partitioner());
-            } catch (ConfigurationException e) {
-                e.printStackTrace();  //To change body of catch statement use File | Settings | File Templates.
-            }
-
-            int number_slices = 0;
-            for (TokenRange trange : tr) {
-                System.out.print(trange.getStart_token());
-                System.out.print(" - " + trange.getEnd_token());
-                boolean found = false;
-                String host = "";
-                for (EndpointDetails epd : trange.getEndpoint_details()) {
-                    if (epd.getDatacenter().equals("DC2")) {
-                        System.out.println(" : " + epd.getHost());
-                        host = epd.getHost();
-                        found = true;
-                    }
-                }
-                if (!found) {
-                    System.out.println("Endpoint without DC2");
-                }
-
-                cli.scan_clients.get(host).set_keyspace("Eurotux");
-
-                List<String> splits = cli.scan_clients.get(host).describe_splits("File_system", trange.getStart_token(), trange.getEnd_token(), 2000);
-                System.out.println(splits.toString());
-                number_slices += splits.size() - 1;
-            }
-
-            System.out.println("Number of splits: " + (number_slices));
-
-        } catch (InvalidRequestException e) {
-            e.printStackTrace();  //To change body of catch statement use File | Settings | File Templates.
-        } catch (TException e) {
-            e.printStackTrace();  //To change body of catch statement use File | Settings | File Templates.
-        }
+        cli.debug_folder = base_folder;
+        cli.createFolders("xpto1/cenas2/teste/1",false);
+//
+//        Properties props = new Properties();
+//
+//        //props.setProperty("hosts", args[0]);
+//        props.setProperty("hosts", "192.168.111.221");
+//        props.setProperty("cassandra.scan_connections", "192.168.111.224,192.168.111.228,192.168.111.232");
+//
+//        cli.setProperties(props);
+//
+//        try {
+//            cli.init();
+//        } catch (Exception e) {
+//            e.printStackTrace();
+//            System.exit(0);
+//        }
+//
+//        try {
+//
+//
+//            List<TokenRange> tr = cli.client.describe_ring("Eurotux");
+//
+//            try {
+//                IPartitioner partitioner = FBUtilities.newPartitioner(cli.client.describe_partitioner());
+//            } catch (ConfigurationException e) {
+//                e.printStackTrace();  //To change body of catch statement use File | Settings | File Templates.
+//            }
+//
+//            int number_slices = 0;
+//            for (TokenRange trange : tr) {
+//                System.out.print(trange.getStart_token());
+//                System.out.print(" - " + trange.getEnd_token());
+//                boolean found = false;
+//                String host = "";
+//                for (EndpointDetails epd : trange.getEndpoint_details()) {
+//                    if (epd.getDatacenter().equals("DC2")) {
+//                        System.out.println(" : " + epd.getHost());
+//                        host = epd.getHost();
+//                        found = true;
+//                    }
+//                }
+//                if (!found) {
+//                    System.out.println("Endpoint without DC2");
+//                }
+//
+//                cli.scan_clients.get(host).set_keyspace("Eurotux");
+//
+//                List<String> splits = cli.scan_clients.get(host).describe_splits("File_system", trange.getStart_token(), trange.getEnd_token(), 2000);
+//                System.out.println(splits.toString());
+//                number_slices += splits.size() - 1;
+//            }
+//
+//            System.out.println("Number of splits: " + (number_slices));
+//
+//        } catch (InvalidRequestException e) {
+//            e.printStackTrace();  //To change body of catch statement use File | Settings | File Templates.
+//        } catch (TException e) {
+//            e.printStackTrace();  //To change body of catch statement use File | Settings | File Templates.
+//        }
 //
 //        HashMap<String, ByteIterator> vals = new HashMap<String, ByteIterator>();
 //        vals.put("age", new StringByteIterator("57"));
@@ -791,6 +888,9 @@ public class CassandraClient8 extends DB {
 //
 //        res = cli.delete("usertable", "BrianFrankCooper");
 //        System.out.println("Result of delete: " + res);
+        
+        
     }
+
 
 }
