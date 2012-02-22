@@ -540,7 +540,7 @@ public class CassandraClient8 extends DB {
 
             for (Pair<String, String> token_info : endpoint_token_ranges) {
 
-                TreeMap<byte[],byte[]> column_limits = new TreeMap<byte[], byte[]>();
+                TreeMap<Object,byte[]> column_limits = new TreeMap<Object, byte[]>();
 
                 String start_token = token_info.getLeft();
                 String end_token = token_info.getRight();
@@ -595,11 +595,11 @@ public class CassandraClient8 extends DB {
                     }
 
                     if(!column_limits.isEmpty()){
-                        for(byte[] key : column_limits.keySet()){
+                        for(Object key : column_limits.keySet()){
                             finished = false;
 
                             byte[] start_column_name = column_limits.get(key);
-                            ByteBuffer row_key = ByteBuffer.wrap(key);
+                            ByteBuffer row_key = ByteBuffer.wrap((byte[])key);
 
                             predicate.getSlice_range().setStart(start_column_name);
                             while (!finished) {
