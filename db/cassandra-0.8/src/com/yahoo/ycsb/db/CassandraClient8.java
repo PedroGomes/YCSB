@@ -609,7 +609,7 @@ public class CassandraClient8 extends DB {
                             predicate.getSlice_range().setStart(start_column_name);
                             while (!finished) {
                                 List<ColumnOrSuperColumn> results = scan_client.get_slice(row_key,parent,predicate,scan_ConsistencyLevel);
-                                number_retrieved_files += results.size();
+                                number_retrieved_files += results.size()-1;
 
                                 if(results.size()<column_buffer){
                                     finished =  true;
