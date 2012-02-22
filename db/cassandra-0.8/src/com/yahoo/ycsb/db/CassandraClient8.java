@@ -524,6 +524,7 @@ public class CassandraClient8 extends DB {
         Cassandra.Client scan_client;
         int limit;
         int number_retrieved_keys = 0;
+        int number_retrieved_files = 0;
         int number_empty_keys = 0;
         List<String> retrieved_keys = new ArrayList<String>();
         SlicePredicate predicate;
@@ -540,6 +541,7 @@ public class CassandraClient8 extends DB {
 
             for (Pair<String, String> token_info : endpoint_token_ranges) {
 
+                predicate = new SlicePredicate().setSlice_range(new SliceRange(emptyByteBuffer, emptyByteBuffer, false, column_buffer));
                 TreeMap<ByteBuffer,byte[]> column_limits = new TreeMap<ByteBuffer, byte[]>();
 
                 String start_token = token_info.getLeft();
@@ -559,11 +561,13 @@ public class CassandraClient8 extends DB {
                         List<KeySlice> temp_results = scan_client.get_range_slices(parent, predicate, kr, scan_ConsistencyLevel);
 
                         int number_files = 0;
+                        int number_keys = 0;
                         int empty_keys = 0;
 
                         for (KeySlice keySlice : temp_results) {
 
                             if (keySlice.getColumnsSize() > 0) {
+                                number_keys++;
                                 retrieved_keys.add(new String(keySlice.getKey()));
                                 number_files+=keySlice.getColumnsSize();
                             } else {
@@ -577,7 +581,8 @@ public class CassandraClient8 extends DB {
                             }
                         }
 
-                        number_retrieved_keys += number_files;
+                        number_retrieved_keys += number_keys;
+                        number_retrieved_files += number_files;
                         number_empty_keys += empty_keys;
 
                         if (number_files == 0) {
@@ -604,7 +609,7 @@ public class CassandraClient8 extends DB {
                             predicate.getSlice_range().setStart(start_column_name);
                             while (!finished) {
                                 List<ColumnOrSuperColumn> results = scan_client.get_slice(row_key,parent,predicate,scan_ConsistencyLevel);
-                                number_retrieved_keys += results.size();
+                                number_retrieved_files += results.size();
 
                                 if(results.size()<column_buffer){
                                     finished =  true;
@@ -621,7 +626,7 @@ public class CassandraClient8 extends DB {
                 }
             }
 
-            System.out.println("(debug:) Thread scan t: " + number_retrieved_keys + " e: " + number_empty_keys);
+            System.out.println("(debug:) Thread scan k: " + number_retrieved_keys + " f: "+number_retrieved_files+" e: " + number_empty_keys);
 
         }
     }
