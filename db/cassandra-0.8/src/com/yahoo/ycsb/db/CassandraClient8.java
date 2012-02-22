@@ -64,6 +64,9 @@ public class CassandraClient8 extends DB {
     public static final String WRITE_CONSISTENCY_PROPERTY = "cassandra.writeconsistency";
 
     public static final String ROW_BUFFER_PROPERTY = "cassandra.rowbuffer";
+    public static final String COLUMN_BUFFER_PROPERTY = "cassandra.columnbuffer";
+    public static final String COLUMN_BUFFER_DEFAULT_PROPERTY = "200";
+
 
     public static final String COLUMN_FAMILY_PROPERTY = "cassandra.columnfamily";
     public static final String COLUMN_FAMILY_PROPERTY_DEFAULT = "data";
@@ -101,6 +104,7 @@ public class CassandraClient8 extends DB {
     ColumnParent parent;
 
     int row_buffer = 1000;
+    int column_buffer;
     ConsistencyLevel read_ConsistencyLevel = ConsistencyLevel.QUORUM;
     ConsistencyLevel write_ConsistencyLevel = ConsistencyLevel.QUORUM;
     ConsistencyLevel scan_ConsistencyLevel = ConsistencyLevel.QUORUM;
@@ -128,6 +132,7 @@ public class CassandraClient8 extends DB {
         String password = getProperties().getProperty(PASSWORD_PROPERTY);
 
         row_buffer = Integer.parseInt(getProperties().getProperty(ROW_BUFFER_PROPERTY, "1000"));
+        column_buffer = Integer.parseInt(getProperties().getProperty(COLUMN_BUFFER_PROPERTY,COLUMN_BUFFER_DEFAULT_PROPERTY));
 
         try {
 
@@ -368,7 +373,7 @@ public class CassandraClient8 extends DB {
                 SlicePredicate predicate;
                 if (fields == null) {
 //                    predicate = new SlicePredicate().setSlice_range(new SliceRange(emptyByteBuffer, emptyByteBuffer, false, 1000000));
-                    predicate = new SlicePredicate().setSlice_range(new SliceRange(emptyByteBuffer, emptyByteBuffer, false, 100));
+                    predicate = new SlicePredicate().setSlice_range(new SliceRange(emptyByteBuffer, emptyByteBuffer, false, column_buffer));
 
                 } else {
                     ArrayList<ByteBuffer> fieldlist = new ArrayList<ByteBuffer>(fields.size());
@@ -535,6 +540,8 @@ public class CassandraClient8 extends DB {
 
             for (Pair<String, String> token_info : endpoint_token_ranges) {
 
+                TreeMap<byte[],byte[]> column_limits = new TreeMap<byte[], byte[]>();
+
                 String start_token = token_info.getLeft();
                 String end_token = token_info.getRight();
 
@@ -551,23 +558,29 @@ public class CassandraClient8 extends DB {
 
                         List<KeySlice> temp_results = scan_client.get_range_slices(parent, predicate, kr, scan_ConsistencyLevel);
 
-                        int number_keys = 0;
+                        int number_files = 0;
                         int empty_keys = 0;
 
                         for (KeySlice keySlice : temp_results) {
-                            number_keys++;
 
                             if (keySlice.getColumnsSize() > 0) {
                                 retrieved_keys.add(new String(keySlice.getKey()));
+                                number_files+=keySlice.getColumnsSize();
                             } else {
                                 empty_keys++;
                             }
+
+                            if(keySlice.getColumnsSize()==column_buffer){
+                                List<ColumnOrSuperColumn> columns = keySlice.getColumns();
+                                Column last_column = columns.get(columns.size()-1).getColumn();
+                                column_limits.put(keySlice.getKey(),last_column.getName());
+                            }
                         }
 
-                        number_retrieved_keys += number_keys;
+                        number_retrieved_keys += number_files;
                         number_empty_keys += empty_keys;
 
-                        if (number_keys == 0) {
+                        if (number_files == 0) {
                             finished = true;
 
                         } else {
@@ -580,10 +593,32 @@ public class CassandraClient8 extends DB {
                         preform_debug_creation(temp_results);
 
                     }
+
+                    if(!column_limits.isEmpty()){
+                        for(byte[] key : column_limits.keySet()){
+                            finished = false;
+
+                            byte[] start_column_name = column_limits.get(key);
+                            ByteBuffer row_key = ByteBuffer.wrap(key);
+
+                            predicate.getSlice_range().setStart(start_column_name);
+                            while (!finished) {
+                                List<ColumnOrSuperColumn> results = scan_client.get_slice(row_key,parent,predicate,scan_ConsistencyLevel);
+                                number_retrieved_keys += results.size();
+
+                                if(results.size()<column_buffer){
+                                    finished =  true;
+                                }
+                                else{
+                                    Column last_column = results.get(results.size()-1).getColumn();
+                                    predicate.getSlice_range().setStart(last_column.getName());
+                                }
+                            }
+                        }
+                    }
                 } catch (Exception e) {
                     e.printStackTrace();
                 }
-
             }
 
             System.out.println("(debug:) Thread scan t: " + number_retrieved_keys + " e: " + number_empty_keys);
