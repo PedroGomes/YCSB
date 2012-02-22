@@ -367,7 +367,8 @@ public class CassandraClient8 extends DB {
             try {
                 SlicePredicate predicate;
                 if (fields == null) {
-                    predicate = new SlicePredicate().setSlice_range(new SliceRange(emptyByteBuffer, emptyByteBuffer, false, 1000000));
+//                    predicate = new SlicePredicate().setSlice_range(new SliceRange(emptyByteBuffer, emptyByteBuffer, false, 1000000));
+                    predicate = new SlicePredicate().setSlice_range(new SliceRange(emptyByteBuffer, emptyByteBuffer, false, 100));
 
                 } else {
                     ArrayList<ByteBuffer> fieldlist = new ArrayList<ByteBuffer>(fields.size());
