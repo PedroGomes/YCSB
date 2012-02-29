@@ -571,9 +571,10 @@ public class File_CoreWorkload extends Workload {
             redis_client = new Jedis(host,Integer.parseInt(port));
         }
 
+        ClientThreadState clientThreadState = new ClientThreadState(redis_client,resultHandler);
              
-        Pair<ResultHandler,Jedis> thread_state = new Pair<ResultHandler, Jedis>(resultHandler,redis_client);
-        return thread_state;
+     //   Pair<ResultHandler,Jedis> thread_state = new Pair<ResultHandler, Jedis>(resultHandler,redis_client);
+        return clientThreadState;
     }
 
     @Override
@@ -595,8 +596,8 @@ public class File_CoreWorkload extends Workload {
 
     public String fetchKeyName(long keynum,Object thread_state) {
 
-        Pair<ResultHandler,Jedis> state = (Pair<ResultHandler, Jedis>) thread_state;
-        Jedis redis_client  = state.getRight();
+        ClientThreadState state = (ClientThreadState) thread_state;
+        Jedis redis_client  = state.getRedis_connection();
 
         String key = "";
 
@@ -662,14 +663,17 @@ public class File_CoreWorkload extends Workload {
      */
     public boolean doTransaction(DB db, Object threadstate) {
 
-        Pair<ResultHandler,Jedis> state = (Pair<ResultHandler, Jedis>) threadstate;
-        ResultHandler resultHandler = state.getLeft();
+        ClientThreadState state = (ClientThreadState) threadstate;
+        ResultHandler resultHandler = state.getClient_resultHandler();
         
         String op = operationchooser.nextString();
 
         long init_transaction_time = System.currentTimeMillis();
 
         if (op.compareTo("READ") == 0) {
+            if(state.isScan_thread()){    //scan thread only
+                return true;
+            }
             doTransactionRead(db,threadstate);
         } else if (op.compareTo("UPDATE") == 0) {
             doTransactionUpdate(db);
@@ -685,7 +689,6 @@ public class File_CoreWorkload extends Workload {
                         && (number_of_scans == -1 || executed_scans < number_of_scans) ){
                     scan_in_process = true;
                     do_scan = true;
-                    executed_scans ++;
                 }
             scan_lock.unlock();
 
@@ -693,12 +696,18 @@ public class File_CoreWorkload extends Workload {
                 doTransactionScan(db);
                 scan_lock.lock();
                 scan_in_process = false;
+                executed_scans ++;
+                state.setScan_thread(true);
                 last_scan = System.currentTimeMillis();
                 scan_lock.unlock();
             }
             else{
                 op = "READ";
-                doTransactionRead(db,threadstate);
+                if(state.isScan_thread()){    //scan thread only
+                    return true;
+                }else{
+                    doTransactionRead(db,threadstate);
+                }
             }
         } else {
             doTransactionReadModifyWrite(db);
@@ -842,5 +851,34 @@ public class File_CoreWorkload extends Workload {
 
         HashMap<String, ByteIterator> values = buildValues();
         db.insert(table, dbkey, values);
+    }
+}
+
+class ClientThreadState{
+
+    Jedis redis_connection;
+    ResultHandler client_resultHandler;
+    boolean scan_thread;
+
+    ClientThreadState(Jedis redis_connection, ResultHandler client_resultHandler) {
+        this.redis_connection = redis_connection;
+        this.client_resultHandler = client_resultHandler;
+        this.scan_thread = false;
+    }
+
+    public void setScan_thread(boolean scan_thread) {
+        this.scan_thread = scan_thread;
+    }
+
+    public Jedis getRedis_connection() {
+        return redis_connection;
+    }
+
+    public ResultHandler getClient_resultHandler() {
+        return client_resultHandler;
+    }
+
+    public boolean isScan_thread() {
+        return scan_thread;
     }
 }

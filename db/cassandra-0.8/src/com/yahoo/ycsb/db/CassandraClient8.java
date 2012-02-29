@@ -22,7 +22,10 @@ import com.yahoo.ycsb.*;
 import java.io.*;
 import java.util.*;
 import java.nio.ByteBuffer;
+import java.util.concurrent.atomic.AtomicInteger;
 
+import com.yahoo.ycsb.measurements.ResultHandler;
+import com.yahoo.ycsb.measurements.ResultStorage;
 import org.apache.cassandra.config.ConfigurationException;
 import org.apache.cassandra.dht.IPartitioner;
 import org.apache.cassandra.utils.FBUtilities;
@@ -41,6 +44,10 @@ import org.apache.cassandra.thrift.*;
  * Cassandra 0.8 client for YCSB framework
  */
 public class CassandraClient8 extends DB {
+
+    private static AtomicInteger clientID_source = new AtomicInteger(0);
+    private int clientID;
+
     static Random random = new Random();
     public static final int Ok = 0;
     public static final int Error = -1;
@@ -81,6 +88,7 @@ public class CassandraClient8 extends DB {
 
     TTransport tr;
     Cassandra.Client client;
+    String selected_host;
 
     boolean using_scan_connection = false;
 
@@ -108,6 +116,8 @@ public class CassandraClient8 extends DB {
     ConsistencyLevel read_ConsistencyLevel = ConsistencyLevel.QUORUM;
     ConsistencyLevel write_ConsistencyLevel = ConsistencyLevel.QUORUM;
     ConsistencyLevel scan_ConsistencyLevel = ConsistencyLevel.QUORUM;
+    
+    ResultHandler error_logger;
 
 
     /**
@@ -115,6 +125,9 @@ public class CassandraClient8 extends DB {
      * DB instance per client thread.
      */
     public void init() throws DBException {
+        clientID = clientID_source.incrementAndGet();
+        error_logger = ResultStorage.getClientResultHandlerInstance(clientID+"");
+
         String hosts = getProperties().getProperty("hosts");
         if (hosts == null) {
             throw new DBException("Required property \"hosts\" missing for CassandraClient");
@@ -148,11 +161,10 @@ public class CassandraClient8 extends DB {
         String[] allhosts = hosts.split(",");
         String myhost = allhosts[random.nextInt(allhosts.length)];
         //System.out.println(java.util.Arrays.toString(allhosts));
+        selected_host = myhost;
         Pair<Cassandra.Client, TTransport> client_connection = makeConnection(username, password, myhost);
         client = client_connection.getLeft();
         tr = client_connection.getRight();
-
-        //System.out.println("(debug:) client connection to "+myhost+" RCL: "+read_ConsistencyLevel);
 
         scan_cons_trp = new TreeMap<String, TTransport>();
         scan_clients = new TreeMap<String, Cassandra.Client>();
@@ -172,7 +184,6 @@ public class CassandraClient8 extends DB {
         tokenized_scans = Boolean.parseBoolean(getProperties().getProperty(TOKENIZED_SCANS_PROPERTY, "false"));
 
         debug_folder = getProperties().getProperty(DEBUG_FOLDER_PROPERTY);
-        //  System.out.println("(debug:) scan connection to "+myhost+" SCL: "+scan_ConsistencyLevel);
 
     }
 
@@ -252,11 +263,25 @@ public class CassandraClient8 extends DB {
      * instance per client thread.
      */
     public void cleanup() throws DBException {
-        tr.close();
         if (using_scan_connection) {
             for (TTransport scan_con_trp : scan_cons_trp.values())
                 scan_con_trp.close();
         }
+    }
+
+    /**
+     * Log the error occurred in the client
+     */
+    public synchronized void logError(String method,Exception e, String host) {
+        ArrayList<Object> error_elements = new ArrayList<Object>();
+        error_elements.add(host);
+        error_elements.add(e.getClass().toString());
+        error_elements.add(method);
+        error_elements.add(System.currentTimeMillis());
+
+        error_logger.logData("Connection Errors",error_elements);
+        
+
     }
 
     /**
@@ -326,6 +351,7 @@ public class CassandraClient8 extends DB {
                 return Ok;
             } catch (Exception e) {
                 errorexception = e;
+                logError("Read",e,selected_host);
             }
 
             try {
@@ -333,10 +359,10 @@ public class CassandraClient8 extends DB {
             } catch (InterruptedException e) {
             }
         }
-        errorexception.printStackTrace();
-        errorexception.printStackTrace(System.out);
+        System.out.println("error: "+errorexception.getClass().toString()+" : "+errorexception.getMessage());
+      //  errorexception.printStackTrace();
+      //  errorexception.printStackTrace(System.out);
         return Error;
-
     }
 
     /**
@@ -355,15 +381,18 @@ public class CassandraClient8 extends DB {
                     Vector<HashMap<String, ByteIterator>> result) {
 
         Cassandra.Client used_client = null;
+        String scan_host = "";
         if (using_scan_connection) {
             int selected = random.nextInt(scan_clients.size());
             int i = 0;
             for (String host : scan_clients.keySet()) {
                 if (i == selected)
+                    scan_host = host;
                     used_client = scan_clients.get(host);
                 i++;
             }
         } else {
+            scan_host=selected_host;
             used_client = client;
         }
 
@@ -420,8 +449,8 @@ public class CassandraClient8 extends DB {
                             used_client.set_keyspace(table);
                         }
 
-                        Token_scan token_scan = new Token_scan(token_endpoints.get(endpoint_host), used_client,
-                                limit, predicate);
+                        Token_scan token_scan = new Token_scan(token_endpoints.get(endpoint_host), endpoint_host,
+                                used_client,limit);
 
                         Thread t = new Thread(token_scan);
                         t.start();
@@ -506,6 +535,7 @@ public class CassandraClient8 extends DB {
 
                 return Ok;
             } catch (Exception e) {
+                logError("scan",e,selected_host);
                 errorexception = e;
             }
             try {
@@ -513,8 +543,9 @@ public class CassandraClient8 extends DB {
             } catch (InterruptedException e) {
             }
         }
-        errorexception.printStackTrace();
-        errorexception.printStackTrace(System.out);
+        System.out.println("error: "+errorexception.getClass().toString()+" : "+errorexception.getMessage());
+        //errorexception.printStackTrace();
+        //errorexception.printStackTrace(System.out);
         return Error;
     }
 
@@ -522,6 +553,7 @@ public class CassandraClient8 extends DB {
 
         List<Pair<String, String>> endpoint_token_ranges;
         Cassandra.Client scan_client;
+        String client_host;
         int limit;
         int number_retrieved_keys = 0;
         int number_retrieved_files = 0;
@@ -529,11 +561,11 @@ public class CassandraClient8 extends DB {
         List<String> retrieved_keys = new ArrayList<String>();
         SlicePredicate predicate;
 
-        Token_scan(List<Pair<String, String>> endpoint_token_ranges, Cassandra.Client scan_client, int limit, SlicePredicate predicate) {
+        Token_scan(List<Pair<String, String>> endpoint_token_ranges, String client_host, Cassandra.Client scan_client, int limit) {
             this.endpoint_token_ranges = endpoint_token_ranges;
             this.scan_client = scan_client;
             this.limit = limit;
-            this.predicate = predicate;
+            this.client_host = client_host;
         }
 
         @Override
@@ -622,7 +654,8 @@ public class CassandraClient8 extends DB {
                         }
                     }
                 } catch (Exception e) {
-                    e.printStackTrace();
+                    logError("Token_scan",e,client_host);
+                    System.out.println("error: "+errorexception.getClass().toString()+" : "+errorexception.getMessage());
                 }
             }
 
