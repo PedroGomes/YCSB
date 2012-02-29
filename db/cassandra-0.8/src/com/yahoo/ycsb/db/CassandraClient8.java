@@ -575,7 +575,6 @@ public class CassandraClient8 extends DB {
                             }
 
                             if(keySlice.getColumnsSize()==column_buffer){
-                                number_files++;
                                 List<ColumnOrSuperColumn> columns = keySlice.getColumns();
                                 Column last_column = columns.get(columns.size()-1).getColumn();
                                 column_limits.put(keySlice.key,last_column.getName());
