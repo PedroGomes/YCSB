@@ -338,6 +338,15 @@ public class CassandraClient8 extends DB {
                 }
                 client = client_connection.getLeft();
                 tr = client_connection.getRight();
+
+                try {
+                    client.set_keyspace(_table);
+                } catch (Exception e1) {
+                    e.printStackTrace();
+                    available_connections.remove(host);
+                    continue;
+                }
+
                 connected = true;
             }
 
