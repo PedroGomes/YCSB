@@ -300,6 +300,8 @@ public class CassandraClient8 extends DB {
      */
     public synchronized boolean handleError(String method,Exception e, String host) {
 
+        logError(method,e,host);
+
         if (e instanceof TimedOutException) {
             timout_tries++;
             if (timout_tries != OperationRetries) {
@@ -355,7 +357,6 @@ public class CassandraClient8 extends DB {
             System.out.println("Unknown exception: " + e.getCause());
         }
         
-        logError(method,e,host);
 
         return OperationRetries==timout_tries;
 
