@@ -288,7 +288,7 @@ public class CassandraClient8 extends DB {
         error_elements.add(method);
         error_elements.add(System.currentTimeMillis());
 
-        error_logger.logData("Connection Errors",error_elements);
+        error_logger.logData("Errors",error_elements);
     }
 
     /**
