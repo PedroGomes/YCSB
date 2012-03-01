@@ -282,6 +282,7 @@ public class CassandraClient8 extends DB {
      */
     public void logError(String method,Exception e, String host) {
         ArrayList<Object> error_elements = new ArrayList<Object>();
+        error_elements.add(clientID);
         error_elements.add(host);
         error_elements.add(e.getClass().toString());
         error_elements.add(method);
