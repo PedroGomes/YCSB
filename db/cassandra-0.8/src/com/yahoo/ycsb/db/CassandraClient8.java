@@ -288,7 +288,7 @@ public class CassandraClient8 extends DB {
         error_elements.add(method);
         error_elements.add(System.currentTimeMillis());
 
-        error_logger.logData("Connection Errors",error_elements);
+        error_logger.logData("Errors",error_elements);
     }
 
     /**
@@ -299,6 +299,8 @@ public class CassandraClient8 extends DB {
      * @return a flag that tells to the calling method if it should quit
      */
     public synchronized boolean handleError(String method,Exception e, String host) {
+
+        logError(method,e,host);
 
         if (e instanceof TimedOutException) {
             timout_tries++;
@@ -355,7 +357,6 @@ public class CassandraClient8 extends DB {
             System.out.println("Unknown exception: " + e.getCause());
         }
         
-        logError(method,e,host);
 
         return OperationRetries==timout_tries;
 
