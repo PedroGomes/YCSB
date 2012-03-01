@@ -29,6 +29,7 @@ import com.yahoo.ycsb.measurements.ResultStorage;
 import org.apache.cassandra.config.ConfigurationException;
 import org.apache.cassandra.dht.IPartitioner;
 import org.apache.cassandra.utils.FBUtilities;
+import org.apache.thrift.TApplicationException;
 import org.apache.thrift.TException;
 import org.apache.thrift.transport.TTransport;
 import org.apache.thrift.transport.TFramedTransport;
@@ -36,6 +37,7 @@ import org.apache.thrift.transport.TSocket;
 import org.apache.thrift.protocol.TProtocol;
 import org.apache.thrift.protocol.TBinaryProtocol;
 import org.apache.cassandra.thrift.*;
+import org.apache.thrift.transport.TTransportException;
 
 
 //XXXX if we do replication, fix the consistency levels
@@ -84,8 +86,13 @@ public class CassandraClient8 extends DB {
 
     public static final String DEBUG_FOLDER_PROPERTY = "cassandra.debug_folder";
 
+    String username;
+    String password;
+
     String debug_folder;
 
+    String[] available_client_hosts;
+    
     TTransport tr;
     Cassandra.Client client;
     String selected_host;
@@ -118,6 +125,7 @@ public class CassandraClient8 extends DB {
     ConsistencyLevel scan_ConsistencyLevel = ConsistencyLevel.QUORUM;
     
     ResultHandler error_logger;
+    int timout_tries = 0;
 
 
     /**
@@ -141,8 +149,8 @@ public class CassandraClient8 extends DB {
         OperationRetries = Integer.parseInt(getProperties().getProperty(OPERATION_RETRY_PROPERTY,
                 OPERATION_RETRY_PROPERTY_DEFAULT));
 
-        String username = getProperties().getProperty(USERNAME_PROPERTY);
-        String password = getProperties().getProperty(PASSWORD_PROPERTY);
+        username = getProperties().getProperty(USERNAME_PROPERTY);
+        password = getProperties().getProperty(PASSWORD_PROPERTY);
 
         row_buffer = Integer.parseInt(getProperties().getProperty(ROW_BUFFER_PROPERTY, "1000"));
         column_buffer = Integer.parseInt(getProperties().getProperty(COLUMN_BUFFER_PROPERTY,COLUMN_BUFFER_DEFAULT_PROPERTY));
@@ -158,9 +166,8 @@ public class CassandraClient8 extends DB {
 
         _debug = Boolean.parseBoolean(getProperties().getProperty("debug", "false"));
 
-        String[] allhosts = hosts.split(",");
-        String myhost = allhosts[random.nextInt(allhosts.length)];
-        //System.out.println(java.util.Arrays.toString(allhosts));
+        available_client_hosts = hosts.split(",");
+        String myhost = available_client_hosts[random.nextInt(available_client_hosts.length)];
         selected_host = myhost;
         Pair<Cassandra.Client, TTransport> client_connection = makeConnection(username, password, myhost);
         client = client_connection.getLeft();
@@ -169,11 +176,12 @@ public class CassandraClient8 extends DB {
         scan_cons_trp = new TreeMap<String, TTransport>();
         scan_clients = new TreeMap<String, Cassandra.Client>();
 
+        String[] available_scan_hosts;
         String scan_hosts = getProperties().getProperty(SCAN_CONNECTIONS_PROPERTY);
         if (scan_hosts != null && !scan_hosts.trim().isEmpty()) {
             using_scan_connection = true;
-            allhosts = scan_hosts.split(",");
-            for (String cass_scan_host : allhosts) {
+            available_scan_hosts = scan_hosts.split(",");
+            for (String cass_scan_host : available_scan_hosts) {
                 client_connection = makeConnection(username, password, cass_scan_host);
                 scan_clients.put(cass_scan_host, client_connection.getLeft());
                 scan_cons_trp.put(cass_scan_host, client_connection.getRight());
@@ -272,7 +280,7 @@ public class CassandraClient8 extends DB {
     /**
      * Log the error occurred in the client
      */
-    public synchronized void logError(String method,Exception e, String host) {
+    public void logError(String method,Exception e, String host) {
         ArrayList<Object> error_elements = new ArrayList<Object>();
         error_elements.add(host);
         error_elements.add(e.getClass().toString());
@@ -280,9 +288,68 @@ public class CassandraClient8 extends DB {
         error_elements.add(System.currentTimeMillis());
 
         error_logger.logData("Connection Errors",error_elements);
+    }
+
+    /**
+     *
+     * @param method  the calling method
+     * @param e  the exception
+     * @param host the used client host when the error occurred
+     * @return a flag that tells to the calling method if it should quit
+     */
+    public synchronized boolean handleError(String method,Exception e, String host) {
+
+        if (e instanceof TimedOutException) {
+            timout_tries++;
+            if (timout_tries != OperationRetries) {
+                try {
+                    Thread.sleep(1000);
+                } catch (InterruptedException e1) {
+                }
+            }
+        } else if (e instanceof InvalidRequestException || e instanceof UnavailableException) {
+            System.out.println("Nothing we can do");
+            timout_tries = OperationRetries;
+        } else if (e instanceof TApplicationException || e instanceof TTransportException) {
+            
+            boolean connected = false;
+
+            ArrayList<String> available_connections = new ArrayList<String>(Arrays.asList(available_client_hosts));
+            available_connections.remove(host);
+            while(!connected){
+
+                if(available_connections.isEmpty()){
+                    return true;
+                }
+
+                String myhost = selected_host;
+                while(myhost.equals(selected_host)){
+                    myhost = available_connections.get(random.nextInt(available_connections.size()));
+                }
+
+                selected_host = myhost;
+                Pair<Cassandra.Client, TTransport> client_connection = null;
+                try {
+                    client_connection = makeConnection(username, password, myhost);
+                } catch (DBException e1) {
+                    available_connections.remove(host);
+                    continue;
+                }
+                client = client_connection.getLeft();
+                tr = client_connection.getRight();
+                connected = true;
+            }
+
+        } else {
+            System.out.println("Unknown exception: " + e.getCause());
+        }
         
+        logError(method,e,host);
+
+        return OperationRetries==timout_tries;
 
     }
+
 
     /**
      * Read a record from the database. Each field/value pair from the result will
@@ -305,8 +372,10 @@ public class CassandraClient8 extends DB {
                 return Error;
             }
         }
-
-        for (int i = 0; i < OperationRetries; i++) {
+        timout_tries =0;
+        boolean quit = false;
+        while (!quit){
+        //for (int i = 0; i < OperationRetries; i++) {
 
             try {
                 SlicePredicate predicate;
@@ -351,17 +420,16 @@ public class CassandraClient8 extends DB {
                 return Ok;
             } catch (Exception e) {
                 errorexception = e;
-                logError("Read",e,selected_host);
+                if(handleError("Read",e,selected_host)){
+                    quit = true;
+                }
             }
-
             try {
                 Thread.sleep(500);
             } catch (InterruptedException e) {
             }
         }
         System.out.println("error: "+errorexception.getClass().toString()+" : "+errorexception.getMessage());
-      //  errorexception.printStackTrace();
-      //  errorexception.printStackTrace(System.out);
         return Error;
     }
 
