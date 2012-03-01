@@ -308,7 +308,8 @@ public class CassandraClient8 extends DB {
                 }
             }
         } else if (e instanceof InvalidRequestException || e instanceof UnavailableException) {
-            System.out.println("Nothing we can do");
+            e.printStackTrace();
+            //System.out.println("Nothing we can do");
             timout_tries = OperationRetries;
         } else if (e instanceof TApplicationException || e instanceof TTransportException) {
             
@@ -429,7 +430,7 @@ public class CassandraClient8 extends DB {
             } catch (InterruptedException e) {
             }
         }
-        System.out.println("error: "+errorexception.getClass().toString()+" : "+errorexception.getMessage());
+     //   System.out.println("error: "+errorexception.getClass().toString()+" : "+errorexception.getMessage());
         return Error;
     }
 
