@@ -1,6 +1,12 @@
 Yahoo! Cloud System Benchmark (YCSB)
 ====================================
 
+Personal changes:
+    A better Cassandra client with more options for the row and column buffers and token based scans.
+    A new workload for reading a file based workloads with more result storage
+    Integration also for the measurement of errors (beta)
+    A small client for direct reads from the file system (a small experience still in its early steps)
+
 Links
 -----
 http://wiki.github.com/brianfrankcooper/YCSB/
