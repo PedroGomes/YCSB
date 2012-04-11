@@ -18,7 +18,6 @@
 package com.yahoo.ycsb.workloads;
 
 import com.yahoo.ycsb.*;
-import com.yahoo.ycsb.Client;
 import com.yahoo.ycsb.generator.*;
 import com.yahoo.ycsb.measurements.Measurements;
 import com.yahoo.ycsb.measurements.ResultHandler;
