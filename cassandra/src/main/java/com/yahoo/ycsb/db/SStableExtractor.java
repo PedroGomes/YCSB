@@ -1,6 +1,9 @@
 package com.yahoo.ycsb.db;
 
-import org.apache.cassandra.config.*;
+import org.apache.cassandra.config.CFMetaData;
+import org.apache.cassandra.config.ColumnDefinition;
+import org.apache.cassandra.config.DatabaseDescriptor;
+import org.apache.cassandra.config.Schema;
 import org.apache.cassandra.db.ColumnFamily;
 import org.apache.cassandra.db.DeletedColumn;
 import org.apache.cassandra.db.ExpiringColumn;
@@ -13,11 +16,6 @@ import org.apache.cassandra.io.sstable.SSTableReader;
 import org.apache.cassandra.io.sstable.SSTableScanner;
 import org.apache.cassandra.utils.ByteBufferUtil;
 import org.apache.commons.cli.*;
-//import redis.clients.jedis.Jedis;
-
-import static org.apache.cassandra.utils.ByteBufferUtil.bytesToHex;
-import static org.apache.cassandra.utils.ByteBufferUtil.string;
-
 
 import java.io.File;
 import java.io.FilenameFilter;
@@ -26,6 +24,10 @@ import java.nio.ByteBuffer;
 import java.nio.charset.CharacterCodingException;
 import java.util.*;
 import java.util.concurrent.*;
+
+import static org.apache.cassandra.utils.ByteBufferUtil.string;
+
+//import redis.clients.jedis.Jedis;
 
 /**
  * Class for data extraction from SStables
@@ -134,7 +136,7 @@ public class SStableExtractor {
         while (scanner.hasNext()) {
             row = (SSTableIdentityIterator) scanner.next();
 
-            String currentKey = bytesToHex(row.getKey().key);
+            String currentKey = ByteBufferUtil.bytesToHex(row.getKey().key);
 
             //System.out.println(currentKey);
             if (excludeSet.contains(currentKey))
