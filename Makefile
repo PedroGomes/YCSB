@@ -24,7 +24,7 @@ MAPKEEPER_DIR=db/mapkeeper/lib
 MAPKEEPER_FILE=mapkeeper.jar
 
 .PHONY: build
-build: download-database-deps
+build:  
 	ant -q -e compile
 	grep name=\"dbcompile build.xml | perl -ne '$$_=~/name=\"(.+)\"\s+depends/; print "$$1\n"; system "ant -q -e $$1"'
 
