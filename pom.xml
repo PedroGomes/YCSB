@@ -71,6 +71,7 @@
     <module>infinispan</module>
     <module>jdbc</module>
     <module>mapkeeper</module>
+    <module>fileSystem</module>
     <module>mongodb</module>
     <!--module>nosqldb</module-->
     <module>redis</module>
