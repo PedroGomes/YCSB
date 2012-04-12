@@ -25,7 +25,12 @@ public class FilesystemClient extends DB {
 
 
     public void init() throws DBException {
+
         filesystem_base_folder = getProperties().getProperty(BASE_FOLDER_PROPERTY);
+        if (filesystem_base_folder == null) {
+            throw new DBException("Required property \"filesystem.base_folder\" missing for FileSystem client");
+        }
+
     }
 
     @Override
