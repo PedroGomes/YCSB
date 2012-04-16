@@ -60,7 +60,8 @@ public class FilesystemClient extends DB {
             return Ok;
 
         } catch (FileNotFoundException e) {
-            e.printStackTrace();
+            System.out.println("Not found: "+key);
+            return Error;
         } catch (IOException e) {
             e.printStackTrace();
         }
