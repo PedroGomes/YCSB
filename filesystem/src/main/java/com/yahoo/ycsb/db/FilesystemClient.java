@@ -36,12 +36,13 @@ public class FilesystemClient extends DB {
     @Override
     public int read(String table, String key, Set<String> fields, HashMap<String, ByteIterator> result) {
 
-        File file = new File(filesystem_base_folder+"/"+key);
       //  FileReader fis = null;
         FileInputStream fis;
         BufferedReader bufferedReader = null;
 
         try {
+            File file = new File(filesystem_base_folder+"/"+key);
+
 //            fis = new FileReader(file);
 //            bufferedReader = new BufferedReader(fis) ;
 //
@@ -61,13 +62,10 @@ public class FilesystemClient extends DB {
             int len = (int)file.length();
             fis = new FileInputStream(file);
             byte buf[] = new byte[len];
-            fis.read(buf);
+            fis.read(buf,0,len);
             fis.close();
-            int cnt = 0;
-            for (int i = 0; i < len; i++) {
-                if (buf[i] == '\n')
-                    cnt++;
-            }
+
+            String s = new String(buf, 0, len, "ISO8859_1");
 
             return Ok;
 
