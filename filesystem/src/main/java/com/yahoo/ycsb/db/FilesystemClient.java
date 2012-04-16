@@ -37,25 +37,37 @@ public class FilesystemClient extends DB {
     public int read(String table, String key, Set<String> fields, HashMap<String, ByteIterator> result) {
 
         File file = new File(filesystem_base_folder+"/"+key);
-        FileReader fis = null;
+      //  FileReader fis = null;
+        FileInputStream fis;
         BufferedReader bufferedReader = null;
 
         try {
-            fis = new FileReader(file);
-            bufferedReader = new BufferedReader(fis) ;
+//            fis = new FileReader(file);
+//            bufferedReader = new BufferedReader(fis) ;
+//
+//            String line;
+//            String line2 = null;
+//
+//            while ((line = bufferedReader.readLine()) != null) {
+//                line2 = line;
+//            }
+//            if (line2!=null) {
+//                int l = line2.length();
+//            }
+//
+//            fis.close();
+//            bufferedReader.close();
 
-            String line;
-            String line2 = null;
-
-            while ((line = bufferedReader.readLine()) != null) {
-                line2 = line;
-            }
-            if (line2!=null) {
-                int l = line2.length();
-            }
-
+            int len = (int)file.length();
+            fis = new FileInputStream(file);
+            byte buf[] = new byte[len];
+            fis.read(buf);
             fis.close();
-            bufferedReader.close();
+            int cnt = 0;
+            for (int i = 0; i < len; i++) {
+                if (buf[i] == '\n')
+                    cnt++;
+            }
 
             return Ok;
 
