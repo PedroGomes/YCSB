@@ -506,6 +506,7 @@ public class File_CoreWorkload extends Workload {
         }
 
         if (redis_database_info != null) {
+            KEY_INPUT_SOURCE = REDIS_INPUT;
             redis_connection_info = redis_database_info;
             String[] connection_info = redis_connection_info.split(":");
             String host = connection_info[0];
@@ -563,7 +564,7 @@ public class File_CoreWorkload extends Workload {
 
         Jedis redis_client = null;
 
-        if(KEY_INPUT_SOURCE = REDIS_INPUT){
+        if(KEY_INPUT_SOURCE == REDIS_INPUT){
             String[] connection_info = redis_connection_info.split(":");
             String host = connection_info[0];
             String port = connection_info[1];
