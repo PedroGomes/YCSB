@@ -43,22 +43,6 @@ public class FilesystemClient extends DB {
         try {
             File file = new File(filesystem_base_folder+"/"+key);
 
-//            fis = new FileReader(file);
-//            bufferedReader = new BufferedReader(fis) ;
-//
-//            String line;
-//            String line2 = null;
-//
-//            while ((line = bufferedReader.readLine()) != null) {
-//                line2 = line;
-//            }
-//            if (line2!=null) {
-//                int l = line2.length();
-//            }
-//
-//            fis.close();
-//            bufferedReader.close();
-
             int len = (int)file.length();
             fis = new FileInputStream(file);
             byte buf[] = new byte[len];
