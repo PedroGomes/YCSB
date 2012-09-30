@@ -2,9 +2,8 @@ Yahoo! Cloud System Benchmark (YCSB)
 ====================================
 
 Personal changes:
-    A better Cassandra client with more options for the row and column buffers and token based scans.
+    A better Cassandra client with more options for the row and column buffers and token based scans (CassandraClient8 - don't look to the version, this works with 1.0+).
     A new workload for reading a file based workloads with more result storage
-    Integration also for the measurement of errors (beta)
     A small client for direct reads from the file system (a small experience still in its early steps)
 
 Links
@@ -13,7 +12,7 @@ http://wiki.github.com/brianfrankcooper/YCSB/
 http://research.yahoo.com/Web_Information_Management/YCSB
 ycsb-users@yahoogroups.com
 
-Getting Started
+Getting Started (From the original)
 ---------------
 
 1. Download the latest release of YCSB:
@@ -37,3 +36,10 @@ Getting Started
 
    See https://github.com/brianfrankcooper/YCSB/wiki/Core-Properties for 
    the list of available workload properties.
+
+4. For this mod, usually you would use 
+./ycsb run cassandra-8 -P ../file_workloads/workload_1 -P ../properties/cassandra.config
+
+
+Notes:
+To compile with maven some databases where disabled. 
